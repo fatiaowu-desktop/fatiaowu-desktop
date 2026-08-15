@@ -1,5 +1,7 @@
 # 发条屋 (Fatiaowu) — DeepSeek Harness 原生桌面外壳
 
+> [English](README.en.md) | 中文
+
 > 「发条屋」是一扇很轻的门，门后是一个很大的房间。
 > 用 macOS 原生 WebKit 包裹 DeepSeek Harness Web 界面，配三套手搓皮肤、余额监控、表情面板、快捷键换肤，以及一只会发光的小鲸鱼。
 
