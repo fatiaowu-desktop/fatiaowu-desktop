@@ -3,8 +3,17 @@
 import Cocoa
 import WebKit
 
+// 内置浏览器「用默认浏览器打开」按钮（带回调的轻量子类）
+final class BrowserOpenButton: NSButton {
+    var onOpen: (() -> Void)?
+    override func performClick(_ sender: Any?) {
+        onOpen?()
+        super.performClick(sender)
+    }
+}
+
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusLabel: NSTextField!
@@ -20,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private let skinNames = ["暗金·深夜", "翡翠·晨光", "猩红·熔岩"]
     private var skinMenuItems: [NSMenuItem] = []
     private var shortcutMonitor: Any? // ⌥⌘1/2/3 快捷键监听（绕过 WKWebView 抢键）
+    private var browserWindows: [NSWindow] = [] // 内置浏览器窗口（保持引用防释放）
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 加载两套皮肤并读取上次选择
@@ -62,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         }
         webView = WKWebView(frame: rect, configuration: config)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         window.contentView = webView
 
         // “正在连接服务”提示
@@ -198,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     // 从 ~/.dsh/.credentials.yaml 读取 DeepSeek API 密钥
     private static func deepseekApiKey() -> String? {
-        guard let content = try? String(contentsOfFile: NSHomeDirectory() + "/.dsh/.credentials.yaml", encoding: .utf8) else {
+        guard let content = try? String(contentsOfFile: "/Users/yangliu/.dsh/.credentials.yaml", encoding: .utf8) else {
             return nil
         }
         for line in content.split(separator: "\n") {
@@ -572,7 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     // 简单日志，写到 ~/.dsh/logs/fatiaowu-app.log 方便排查
     static func log(_ message: String) {
-        let path = NSHomeDirectory() + "/.dsh/logs/fatiaowu-app.log"
+        let path = "/Users/yangliu/.dsh/logs/fatiaowu-app.log"
         let line = "[\(Date())] \(message)\n"
         if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) {
             handle.seekToEndOfFile()
@@ -608,6 +619,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true // 关掉窗口即退出
     }
+
+    // ================= 内置浏览器 =================
+    // 会话里点外部链接时，在本 App 内开一个浏览器窗口，而不是干等着不动。
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        // 只拦截主会话窗口的链接点击；内置浏览器窗口内自由导航
+        if webView !== self.webView {
+            decisionHandler(.allow)
+            return
+        }
+        let isLinkClick = navigationAction.navigationType == .linkActivated
+        let isNewWindow = navigationAction.targetFrame == nil
+        if isLinkClick || isNewWindow {
+            let isDSH = (url.host == "127.0.0.1" || url.host == "localhost") && (url.port == 3080 || url.port == nil)
+            if !isDSH {
+                if url.scheme == "http" || url.scheme == "https" {
+                    openInBuiltInBrowser(url)
+                } else {
+                    NSWorkspace.shared.open(url) // mailto: 等交给系统
+                }
+                decisionHandler(.cancel)
+                return
+            }
+        }
+        decisionHandler(.allow)
+    }
+
+    // JS 打开的链接（window.open / target=_blank）：交给内置浏览器
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if let url = navigationAction.request.url,
+           url.scheme == "http" || url.scheme == "https" {
+            openInBuiltInBrowser(url)
+        }
+        return nil // 不创建新 webview，直接打开内置浏览器
+    }
+
+    private func openInBuiltInBrowser(_ url: URL) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let rect = NSRect(x: 0, y: 0, width: 1080, height: 720)
+            let win = NSWindow(
+                contentRect: rect,
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            win.title = url.host ?? "浏览"
+            win.center()
+
+            // 顶部小工具条：后退 / 前进 / 刷新 / 用默认浏览器打开
+            let back = NSButton(title: "←", target: nil, action: nil)
+            let forward = NSButton(title: "→", target: nil, action: nil)
+            let reload = NSButton(title: "⟳", target: nil, action: nil)
+            let external = BrowserOpenButton(title: "用默认浏览器打开", target: nil, action: nil)
+            for b in [back, forward, reload, external] { b.bezelStyle = .rounded }
+
+            let browser = WKWebView(frame: rect)
+            browser.allowsBackForwardNavigationGestures = true
+
+            back.target = browser
+            back.action = #selector(WKWebView.goBack(_:))
+            forward.target = browser
+            forward.action = #selector(WKWebView.goForward(_:))
+            reload.target = browser
+            reload.action = #selector(WKWebView.reload(_:))
+            external.onOpen = { [weak browser] in
+                guard let browser, let url = browser.url else { return }
+                NSWorkspace.shared.open(url)
+            }
+
+            let toolRow = NSStackView(views: [back, forward, reload, external])
+            toolRow.orientation = .horizontal
+            toolRow.spacing = 6
+            toolRow.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
+
+            let stack = NSStackView(views: [toolRow, browser])
+            stack.orientation = .vertical
+            stack.spacing = 0
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            win.contentView = stack
+            NSLayoutConstraint.activate([
+                toolRow.heightAnchor.constraint(equalToConstant: 36),
+            ])
+
+            self.browserWindows.append(win)
+            win.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            browser.load(URLRequest(url: url))
+        }
+    }
+
 }
 
 // 入口：main.swift 顶层代码运行在主线程，这里明确切到主 actor
