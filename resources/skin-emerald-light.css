@@ -1,0 +1,402 @@
+/* ============================================================
+   发条屋 · 翡翠晨光皮肤 (Emerald Morning) — 浅色
+   浅绿白底 + 深绿文字 + 翡翠绿强调，清新明亮
+   代码块保持深色，对比鲜明
+   ============================================================ */
+
+html {
+  color-scheme: light;
+  background-color: #dde9dc; /* 兜底底色（深一档的暖绿） */
+}
+
+/* 背景：晨雾纸张 — 暖绿渐变 + 极淡纸纹 + 两团柔和鼠尾草光（护眼·易读·艺术） */
+html body {
+  background-color: transparent;
+  background-image:
+    radial-gradient(1100px 760px at 90% -10%, rgba(140, 185, 150, .12), transparent 60%),
+    radial-gradient(980px 720px at -12% 110%, rgba(170, 215, 182, .12), transparent 62%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='linear' slope='0.022'/></feComponentTransfer></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"),
+    linear-gradient(180deg, #f0f5ea 0%, #e6eee0 55%, #d2e2d5 100%);
+  background-attachment: fixed;
+  background-size: cover, cover, 200px 200px, cover;
+}
+
+/* 令牌覆盖：浅色值（双选择器保证优先级高于应用自身深浅两态） */
+html body, html body[data-ds-dark-theme] {
+
+  /* ---------- 背景：浅色半透明 ---------- */
+  --dsw-alias-bg-base: transparent;
+  --dsw-alias-bg-layer-1: rgba(255, 255, 255, .72);
+  --dsw-alias-bg-layer-2: rgba(255, 255, 255, .82);
+  --dsw-alias-bg-layer-3: rgba(255, 255, 255, .94);
+  --dsw-alias-bg-overlay: rgba(255, 255, 255, .92);
+  --dsw-alias-bg-module-platform: rgba(240, 248, 242, .8);
+  --dsw-alias-bg-multi-select: rgba(240, 248, 242, .85);
+  --dsw-alias-bg-skeleton: rgba(16, 185, 129, .12);
+  --dsw-alias-bg-mask-1: rgba(20, 40, 30, .35);
+  --dsw-alias-bg-mask-2: rgba(20, 40, 30, .18);
+  --dsw-alias-bg-mask-drop: rgba(240, 248, 242, .75);
+
+  /* ---------- 文字：深绿黑 ---------- */
+  --dsw-alias-label-primary: #16251c;
+  --dsw-alias-label-secondary: #39503f;
+  --dsw-alias-label-tertiary: #5d7668;
+  --dsw-alias-label-caption: #778e80;
+  --dsw-alias-label-dimmed: #b6c6bb;
+  --dsw-alias-label-primary-foreground: #ffffff;
+  --dsw-alias-label-primary-inverted: #16251c;
+  --dsw-alias-label-primary-bluish: #16251c;
+  --dsw-alias-label-primary-dimmed: #2a4033;
+
+  /* ---------- 品牌强调：翡翠绿 ---------- */
+  --dsw-alias-brand-primary: #0f9d6e;
+  --dsw-alias-brand-primary-invert: #eef6ef;
+  --dsw-alias-brand-text: #0f9d6e;
+  --dsw-alias-state-business-primary: #0f9d6e;
+  --dsw-alias-state-business-tertiary: rgba(16, 185, 129, .16);
+  --dsw-alias-button-info-fill: #0f9d6e;
+  --dsw-alias-button-info-hover: #11b37e;
+  --dsw-alias-button-primary-fill: #0f9d6e;
+  --dsw-alias-button-primary-hover: #11b37e;
+  --dsw-alias-button-primary-dimmed: rgba(16, 185, 129, .18);
+
+  /* ---------- 按钮 / 交互 ---------- */
+  --dsw-alias-button-contrast-fill: #16251c;
+  --dsw-alias-button-elevated-fill: rgba(255, 255, 255, .9);
+  --dsw-alias-button-floating-fill: rgba(255, 255, 255, .92);
+  --dsw-alias-button-floating-hover: #ffffff;
+  --dsw-alias-button-ghost-active-fill: rgba(16, 185, 129, .12);
+  --dsw-alias-button-ghost-active-border: #0f9d6e;
+  --dsw-alias-button-ghost-active-hover: rgba(16, 185, 129, .18);
+  --dsw-alias-button-tool-bar-fill: rgba(15, 157, 110, .5);
+  --dsw-alias-button-tool-bar-hover: rgba(15, 157, 110, .6);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(15, 157, 110, .3);
+
+  --dsw-alias-interactive-bg-hover: rgba(16, 185, 129, .09);
+  --dsw-alias-interactive-bg-active: rgba(16, 185, 129, .14);
+  --dsw-alias-interactive-bg-hover-accent: rgba(16, 185, 129, .16);
+  --dsw-alias-interactive-bg-hover-solid: rgba(16, 185, 129, .1);
+  --dsw-alias-interactive-bg-hover-danger: rgba(239, 68, 68, .1);
+
+  /* ---------- 边框：翡翠淡描 ---------- */
+  --dsw-alias-border-l1: rgba(15, 157, 110, .12);
+  --dsw-alias-border-l2: rgba(15, 157, 110, .2);
+  --dsw-alias-border-l2-darkmode-thin: rgba(15, 157, 110, .14);
+  --dsw-alias-border-l3: rgba(15, 157, 110, .28);
+  --dsw-alias-border-l4: rgba(15, 157, 110, .38);
+  --dsw-alias-border-inverted: rgba(15, 157, 110, .24);
+  --dsw-alias-border-inverted2: rgba(15, 157, 110, .16);
+
+  /* ---------- 侧边栏：浅松绿 ---------- */
+  --dsw-specific-sidebar-fill: rgba(213, 231, 219, .92);
+  --dsw-specific-sidebar-nav-item-active: rgba(255, 255, 255, .9);
+  --dsw-specific-sidebar-nav-item-active-accent: rgba(230, 244, 233, .95);
+  --dsw-specific-sidebar-nav-item-hover: rgba(255, 255, 255, .7);
+
+  /* ---------- 对话气泡：白底 ---------- */
+  --dsw-specific-bubble: rgba(255, 255, 255, .82);
+  --dsw-specific-bubble-highlight: rgba(255, 255, 255, .92);
+
+  /* ---------- 输入框：白底 ---------- */
+  --dsw-specific-input-major: rgba(255, 255, 255, .9);
+  --dsw-specific-login-input: rgba(255, 255, 255, .9);
+
+  /* ---------- 菜单 / 弹层 / 提示 ---------- */
+  --dsw-specific-menu: #ffffff;
+  --dsw-specific-selector: #ffffff;
+  --dsw-specific-tip: #ffffff;
+  --dsw-alias-tooltip-bg: #16251c;
+  --dsw-alias-toast-bg: #16251c;
+
+  /* ---------- 代码块：保持深色（墨绿），对比鲜明 ---------- */
+  --dsw-alias-markdown-code-block: rgba(10, 30, 20, .94);
+  --dsw-alias-markdown-code-block-banner: rgba(14, 40, 27, .96);
+  --dsw-alias-markdown-inline-code: rgba(226, 240, 229, .9);
+  --dsw-alias-markdown-code-segment-selected: rgba(14, 40, 27, .95);
+  --dsw-alias-markdown-code-segment-unselected: rgba(10, 30, 20, .85);
+  --dsw-alias-markdown-citation: rgba(226, 240, 229, .8);
+  --dsw-alias-markdown-placeholder: rgba(240, 248, 242, .9);
+  --dsw-alias-markdown-tag: rgba(226, 240, 229, .85);
+
+  /* ---------- 状态色 ---------- */
+  --dsw-alias-state-success-primary: #0f9d6e;
+  --dsw-alias-state-success-secondary: #11b37e;
+  --dsw-alias-state-success-tertiary: rgba(16, 185, 129, .14);
+
+  /* ---------- 滚动条：浅色 ---------- */
+  --dsh-scrollbar-thumb: rgba(120, 150, 133, .55);
+  --dsh-scrollbar-thumb-hover: #0f9d6e;
+  --dsw-alias-scrollbar-bg-l1: rgba(120, 150, 133, .55);
+  --dsw-alias-scrollbar-bg-l2: rgba(120, 150, 133, .55);
+  --dsw-alias-scrollbar-hover-l1: #0f9d6e;
+  --dsw-alias-scrollbar-hover-l2: #0f9d6e;
+
+  /* ---------- 思考过程渐隐 ---------- */
+  --dsw-linear-gradient-think: linear-gradient(180deg, #f0f7f1 20.19%, rgba(240, 247, 241, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #f7fbf8 20.19%, rgba(247, 251, 248, 0) 100%);
+}
+
+/* ---------- 代码语法高亮：固定深色（配合深色代码块） ---------- */
+html body:not([data-ds-dark-theme]), html body[data-ds-dark-theme] {
+  --shiki-token-constant: #4dabf7;
+  --shiki-token-string: #69db7c;
+  --shiki-token-comment: #8b93a1;
+  --shiki-token-keyword: #f2a2c3;
+  --shiki-token-parameter: #ffa94d;
+  --shiki-token-function: #b197fc;
+  --shiki-token-string-expression: #8ce99a;
+  --shiki-token-punctuation: #c8ced8;
+  --shiki-token-link: #74c0fc;
+}
+
+/* ---------- DeepSeek 字标徽章：翡翠镂空 + 翡翠字 ---------- */
+html body svg[viewBox="0 0 182 24"] rect[width="52"] {
+  fill: none;
+  stroke: var(--dsw-alias-brand-primary);
+  stroke-width: 0.75;
+}
+html body svg[viewBox="0 0 182 24"] rect[width="52"] + g path {
+  fill: var(--dsw-alias-brand-primary);
+  stroke: var(--dsw-alias-brand-primary);
+  stroke-width: 0.8;
+  paint-order: fill stroke;
+}
+
+/* ---------- 侧边栏：晨雾山水（鼠尾草渐变 + 晨光暖晕 + 远山剪影） ---------- */
+html body .hHd-Xa_root {
+  background-color: transparent;
+  background-image:
+    radial-gradient(380px 300px at 28% 6%, rgba(255, 243, 205, .4), transparent 65%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='280' height='120' viewBox='0 0 280 120'><path d='M0 70 C 35 50, 60 78, 90 62 C 120 46, 150 74, 180 58 C 210 42, 245 70, 280 70 L280 120 L0 120 Z' fill='rgba(60,120,85,0.09)'/><path d='M0 92 C 40 78, 70 100, 110 88 C 150 76, 185 98, 230 86 C 255 79, 268 92, 280 92 L280 120 L0 120 Z' fill='rgba(90,150,110,0.08)'/></svg>"),
+    linear-gradient(180deg, rgba(224, 238, 226, .97) 0%, rgba(206, 227, 213, .97) 100%);
+  background-size: 420px 320px, 280px 120px, cover;
+  background-repeat: no-repeat, repeat-x, no-repeat;
+  background-position: center top, bottom, center;
+}
+
+/* 工作区列表不再叠加旧星尘点 */
+html body .qDHVXG_root {
+  background-image: none;
+}
+
+/* ---------- 工作区选中项目：翡翠边框 ---------- */
+html body .YDXeBa_selected {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 157, 110, .5);
+}
+html body .YDXeBa_selected:hover {
+  background: rgba(16, 185, 129, .06) !important;
+}
+
+/* ---------- 会话框下方可交互元素：统一翡翠 ---------- */
+html body .uV2eYG_add,
+html body .Sh0Q9G_trigger,
+html body ._7KE1Ra_trigger,
+html body .JObwrW_trigger {
+  border-color: rgba(15, 157, 110, .45) !important;
+  color: #0f9d6e !important;
+  background-color: rgba(16, 185, 129, .07) !important;
+}
+html body .uV2eYG_add:hover,
+html body .Sh0Q9G_trigger:hover,
+html body ._7KE1Ra_trigger:hover,
+html body .JObwrW_trigger:hover {
+  border-color: rgba(15, 157, 110, .75) !important;
+  color: #0b845d !important;
+  background-color: rgba(16, 185, 129, .13) !important;
+}
+
+/* ---------- 会话框下方金色文字：最细字体 ---------- */
+html body .Sh0Q9G_trigger,
+html body ._7KE1Ra_trigger {
+  font-weight: 500 !important;
+}
+
+/* ---------- 「新会话」按钮：柔和翡翠玻璃，融入侧边栏 ---------- */
+html body .hHd-Xa_newSession {
+  background: rgba(205, 232, 214, .55) !important;
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  border: 1px solid rgba(15, 157, 110, .35) !important;
+  color: #0f9d6e !important;
+}
+html body .hHd-Xa_newSession:hover {
+  background: rgba(190, 225, 200, .72) !important;
+  border-color: rgba(15, 157, 110, .5) !important;
+}
+
+/* ---------- 侧边栏底部「设置」：文字深绿、图标翡翠 ---------- */
+html body .VOzbGW_trigger {
+  color: #2a4033 !important;
+}
+html body .VOzbGW_trigger:hover {
+  color: #2a4033 !important;
+}
+html body .VOzbGW_trigger svg {
+  color: #0f9d6e !important;
+}
+html body .VOzbGW_trigger:hover svg {
+  color: #0b845d !important;
+}
+html body .VOzbGW_trigger svg * {
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* ---------- 发送按钮：翡翠镂空 + 光晕 ---------- */
+html body .uV2eYG_primary {
+  background-color: transparent !important;
+  border: 1.5px solid rgba(15, 157, 110, .85) !important;
+  color: #0f9d6e !important;
+  box-shadow: 0 0 12px rgba(16, 185, 129, .3), inset 0 0 8px rgba(16, 185, 129, .1) !important;
+}
+html body .uV2eYG_primary:hover {
+  background-color: rgba(16, 185, 129, .15) !important;
+  border-color: #0f9d6e !important;
+  color: #0b845d !important;
+  box-shadow: 0 0 18px rgba(16, 185, 129, .45), inset 0 0 10px rgba(16, 185, 129, .14) !important;
+}
+html body .uV2eYG_primary svg * {
+  fill: currentColor !important;
+}
+
+/* ---------- 顶部「标准模式」与右上角 Session log：翡翠 ---------- */
+html body .wSkVaW_headerActions,
+html body .SVAs4q_label,
+html body .nL4_yW_sessionLogButton {
+  color: #0f9d6e !important;
+}
+html body .wSkVaW_headerActions:hover,
+html body .SVAs4q_label:hover,
+html body .nL4_yW_sessionLogButton:hover {
+  color: #0b845d !important;
+}
+
+/* ---------- 头部会话标题：深绿降档 ---------- */
+html body .wSkVaW_titleCluster {
+  color: #41584a !important;
+}
+
+/* ---------- 对话列与输入卡片铺满 + 头像通道 ---------- */
+html body .Md3f7G_column,
+html body .uV2eYG_card {
+  max-width: none !important;
+  box-sizing: border-box !important;
+  padding-left: 44px !important;
+  padding-right: 44px !important;
+}
+html body .gdEzaW_userStack {
+  max-width: min(720px, 90%) !important;
+}
+html body .gdEzaW_userRow,
+html body .Sxvs8a_root {
+  position: relative !important;
+}
+
+/* ---------- 用户气泡：透亮毛玻璃 + 统一翡翠描边（无漫反射） ---------- */
+html body .gdEzaW_bubble {
+  background: rgba(200, 228, 208, .48) !important;
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  border: 1px solid rgba(15, 157, 110, .45) !important;
+  box-shadow: none !important;
+}
+
+/* ---------- 输入卡片：透亮毛玻璃 + 细玻璃边（无外投影） ---------- */
+html body .uV2eYG_card {
+  background: rgba(210, 238, 220, .28) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 0.5px solid rgba(255, 255, 255, .55) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .55),
+    inset 0 -1px 0 rgba(255, 255, 255, .18) !important;
+}
+
+/* ---------- 消息操作图标：翡翠边 ---------- */
+html body .p-xYUq_action,
+html body ._8_XoUG_action {
+  box-sizing: border-box !important;
+  border: 1px solid rgba(15, 157, 110, .4) !important;
+  background: rgba(16, 185, 129, .06) !important;
+}
+html body .p-xYUq_action:hover,
+html body ._8_XoUG_action:hover {
+  border-color: rgba(15, 157, 110, .8) !important;
+  background: rgba(16, 185, 129, .13) !important;
+}
+
+/* ---------- 链接悬停 ---------- */
+html body a:hover, html body[data-ds-dark-theme] a:hover {
+  color: #0b845d;
+}
+
+/* ---------- 主题强调色变量 ---------- */
+:root {
+  --ft-accent: #0f9d6e;
+  --ft-accent-strong: #11b37e;
+  --ft-accent-soft: rgba(15, 157, 110, .5);
+  --ft-accent-softer: rgba(15, 157, 110, .35);
+  --ft-accent-bg: rgba(16, 185, 129, .08);
+  --ft-status: rgba(40, 66, 54, .85);
+  --ft-status-shadow: rgba(255, 255, 255, .75);
+}
+
+/* ---------- 胶囊半透明滚动条 ---------- */
+html body ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html body ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-color: rgba(15, 157, 110, .3);
+  background-clip: padding-box;
+}
+html body ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(15, 157, 110, .55);
+}
+html body ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 底部会话统计栏：取消宽度上限，避免右侧信息被截断 */
+html body .FJxK0a_root,
+html body[data-ds-dark-theme] .FJxK0a_root {
+  max-width: none !important;
+  width: 100% !important;
+  padding: 4px 24px 0 !important;
+  text-overflow: clip;
+}
+
+
+/* ===== 权限弹窗毛玻璃 ===== */
+/* 等待审批卡：加背景模糊，底下内容不再干扰阅读 */
+html body .bqrRRG_card,
+html body[data-ds-dark-theme] .bqrRRG_card {
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+/* Full access 确认等模态弹窗：半透明玻璃卡片 + 模糊 */
+html body ._dialog_15u5s_22,
+html body[data-ds-dark-theme] ._dialog_15u5s_22 {
+  background: rgba(246, 250, 244, .82);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+/* 弹窗遮罩模糊加强 */
+html body,
+html body[data-ds-dark-theme] {
+  --dsw-mask-blur: 14px;
+}
+
+
+/* ---------- 顶部标题栏：毛玻璃 ---------- */
+html body .wSkVaW_header,
+html body[data-ds-dark-theme] .wSkVaW_header {
+  background: rgba(248, 251, 246, .75) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}

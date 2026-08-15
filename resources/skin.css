@@ -1,0 +1,387 @@
+/* ============================================================
+   发条屋 · 流光大斑皮肤 (Soft Luminous)
+   平滑渐变 + 柔和光斑 + 极细斜纹，高级且不干扰阅读
+   ============================================================ */
+
+html {
+  color-scheme: dark;
+  background-color: #10141d; /* 兜底底色 */
+}
+
+/* 背景：渐变光斑图案 */
+html body {
+  background-color: transparent;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.08 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1800' height='1000'><defs><radialGradient id='g1' cx='18%25' cy='22%25' r='38%25'><stop offset='0.0%25' stop-color='rgba(217,164,65,0.04)'/><stop offset='3.1%25' stop-color='rgba(217,164,65,0.0398)'/><stop offset='6.2%25' stop-color='rgba(217,164,65,0.0393)'/><stop offset='9.4%25' stop-color='rgba(217,164,65,0.0383)'/><stop offset='12.5%25' stop-color='rgba(217,164,65,0.0371)'/><stop offset='15.6%25' stop-color='rgba(217,164,65,0.0355)'/><stop offset='18.8%25' stop-color='rgba(217,164,65,0.0335)'/><stop offset='21.9%25' stop-color='rgba(217,164,65,0.0314)'/><stop offset='25.0%25' stop-color='rgba(217,164,65,0.0289)'/><stop offset='28.1%25' stop-color='rgba(217,164,65,0.0263)'/><stop offset='31.2%25' stop-color='rgba(217,164,65,0.0236)'/><stop offset='34.4%25' stop-color='rgba(217,164,65,0.0207)'/><stop offset='37.5%25' stop-color='rgba(217,164,65,0.0177)'/><stop offset='40.6%25' stop-color='rgba(217,164,65,0.0148)'/><stop offset='43.8%25' stop-color='rgba(217,164,65,0.0119)'/><stop offset='46.9%25' stop-color='rgba(217,164,65,0.0091)'/><stop offset='50.0%25' stop-color='rgba(217,164,65,0.0066)'/><stop offset='53.1%25' stop-color='rgba(217,164,65,0.0042)'/><stop offset='56.2%25' stop-color='rgba(217,164,65,0.0022)'/><stop offset='59.4%25' stop-color='rgba(217,164,65,0.0007)'/><stop offset='62.5%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='65.6%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='68.8%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='71.9%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='75.0%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='78.1%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='81.2%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='84.4%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='87.5%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='90.6%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='93.8%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='96.9%25' stop-color='rgba(217,164,65,0.0)'/><stop offset='100.0%25' stop-color='rgba(217,164,65,0.0)'/></radialGradient><radialGradient id='g3' cx='60%25' cy='10%25' r='32%25'><stop offset='0.0%25' stop-color='rgba(150,110,210,0.028)'/><stop offset='3.1%25' stop-color='rgba(150,110,210,0.0278)'/><stop offset='6.2%25' stop-color='rgba(150,110,210,0.0274)'/><stop offset='9.4%25' stop-color='rgba(150,110,210,0.0267)'/><stop offset='12.5%25' stop-color='rgba(150,110,210,0.0257)'/><stop offset='15.6%25' stop-color='rgba(150,110,210,0.0244)'/><stop offset='18.8%25' stop-color='rgba(150,110,210,0.0229)'/><stop offset='21.9%25' stop-color='rgba(150,110,210,0.0212)'/><stop offset='25.0%25' stop-color='rgba(150,110,210,0.0193)'/><stop offset='28.1%25' stop-color='rgba(150,110,210,0.0172)'/><stop offset='31.2%25' stop-color='rgba(150,110,210,0.0151)'/><stop offset='34.4%25' stop-color='rgba(150,110,210,0.0129)'/><stop offset='37.5%25' stop-color='rgba(150,110,210,0.0107)'/><stop offset='40.6%25' stop-color='rgba(150,110,210,0.0085)'/><stop offset='43.8%25' stop-color='rgba(150,110,210,0.0065)'/><stop offset='46.9%25' stop-color='rgba(150,110,210,0.0045)'/><stop offset='50.0%25' stop-color='rgba(150,110,210,0.0028)'/><stop offset='53.1%25' stop-color='rgba(150,110,210,0.0013)'/><stop offset='56.2%25' stop-color='rgba(150,110,210,0.0003)'/><stop offset='59.4%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='62.5%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='65.6%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='68.8%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='71.9%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='75.0%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='78.1%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='81.2%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='84.4%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='87.5%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='90.6%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='93.8%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='96.9%25' stop-color='rgba(150,110,210,0.0)'/><stop offset='100.0%25' stop-color='rgba(150,110,210,0.0)'/></radialGradient><radialGradient id='v' cx='50%25' cy='50%25' r='78%25'><stop offset='0.0%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='3.1%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='6.2%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='9.4%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='12.5%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='15.6%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='18.8%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='21.9%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='25.0%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='28.1%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='31.2%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='34.4%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='37.5%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='40.6%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='43.8%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='46.9%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='50.0%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='53.1%25' stop-color='rgba(0,0,0,0.0)'/><stop offset='56.2%25' stop-color='rgba(0,0,0,0.0005)'/><stop offset='59.4%25' stop-color='rgba(0,0,0,0.0045)'/><stop offset='62.5%25' stop-color='rgba(0,0,0,0.0119)'/><stop offset='65.6%25' stop-color='rgba(0,0,0,0.0223)'/><stop offset='68.8%25' stop-color='rgba(0,0,0,0.0355)'/><stop offset='71.9%25' stop-color='rgba(0,0,0,0.0513)'/><stop offset='75.0%25' stop-color='rgba(0,0,0,0.0697)'/><stop offset='78.1%25' stop-color='rgba(0,0,0,0.0905)'/><stop offset='81.2%25' stop-color='rgba(0,0,0,0.1137)'/><stop offset='84.4%25' stop-color='rgba(0,0,0,0.1392)'/><stop offset='87.5%25' stop-color='rgba(0,0,0,0.167)'/><stop offset='90.6%25' stop-color='rgba(0,0,0,0.197)'/><stop offset='93.8%25' stop-color='rgba(0,0,0,0.2292)'/><stop offset='96.9%25' stop-color='rgba(0,0,0,0.2635)'/><stop offset='100.0%25' stop-color='rgba(0,0,0,0.3)'/></radialGradient></defs><rect width='1800' height='1000' fill='url(%23g1)'/><rect width='1800' height='1000' fill='url(%23g3)'/><rect width='1800' height='1000' fill='url(%23v)'/></svg>"),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12'><path d='M-2 14 L14 -2' stroke='rgba(217,164,65,0.05)' stroke-width='1'/></svg>"),
+    linear-gradient(180deg, #131a2a 0%, #111724 28%, #0f1420 46%, #0c121d 64%, #0a0e17 82%, #080b13 100%);
+  background-size: 200px 200px, 100% 100%, 12px 12px, cover;
+}
+
+/* 令牌覆盖：浅色/深色模式都生效（优先级高于应用自身） */
+html body, html body[data-ds-dark-theme] {
+
+  background-size: 200px 200px, 100% 100%, 12px 12px, cover;
+  --dsw-alias-bg-base: transparent;
+  --dsw-alias-bg-layer-1: rgba(18, 24, 38, .62);
+  --dsw-alias-bg-layer-2: rgba(22, 29, 46, .66);
+  --dsw-alias-bg-layer-3: rgba(28, 36, 56, .7);
+  --dsw-alias-bg-overlay: rgba(35, 44, 66, .8);
+  --dsw-alias-bg-module-platform: rgba(21, 27, 41, .65);
+  --dsw-alias-bg-multi-select: rgba(20, 26, 40, .65);
+  --dsw-alias-bg-skeleton: rgba(217, 164, 65, .08);
+  --dsw-alias-bg-mask-1: rgba(5, 8, 14, .62);
+  --dsw-alias-bg-mask-2: rgba(5, 8, 14, .35);
+  --dsw-alias-bg-mask-drop: rgba(20, 26, 40, .75);
+
+  /* ---------- 文字：暖白提亮 ---------- */
+  --dsw-alias-label-primary: #d5d0c4;
+  --dsw-alias-label-secondary: #b4bac8;
+  --dsw-alias-label-tertiary: #848c9c;
+  --dsw-alias-label-caption: #69717f;
+  --dsw-alias-label-dimmed: #454d5c;
+  --dsw-alias-label-primary-foreground: #161006;
+  --dsw-alias-label-primary-inverted: #d5d0c4;
+  --dsw-alias-label-primary-bluish: #d5d0c4;
+  --dsw-alias-label-primary-dimmed: #c0bab0;
+
+  /* ---------- 品牌强调：黄铜金 ---------- */
+  --dsw-alias-brand-primary: #d9a441;
+  --dsw-alias-brand-primary-invert: #10141d;
+  --dsw-alias-brand-text: #e6b95a;
+  --dsw-alias-state-business-primary: #e6b95a;
+  --dsw-alias-state-business-tertiary: rgba(217, 164, 65, .18);
+  --dsw-alias-button-info-fill: #c08f2c;
+  --dsw-alias-button-info-hover: #d9a441;
+  --dsw-alias-button-primary-fill: #d9a441;
+  --dsw-alias-button-primary-hover: #e8be62;
+  --dsw-alias-button-primary-dimmed: rgba(217, 164, 65, .2);
+
+  /* ---------- 按钮 / 交互 ---------- */
+  --dsw-alias-button-contrast-fill: rgba(35, 45, 68, .92);
+  --dsw-alias-button-elevated-fill: rgba(26, 34, 51, .7);
+  --dsw-alias-button-floating-fill: rgba(26, 34, 51, .78);
+  --dsw-alias-button-floating-hover: rgba(33, 43, 64, .85);
+  --dsw-alias-button-ghost-active-fill: rgba(35, 45, 68, .8);
+  --dsw-alias-button-ghost-active-border: #d9a441;
+  --dsw-alias-button-ghost-active-hover: rgba(42, 54, 80, .85);
+  --dsw-alias-button-tool-bar-fill: rgba(217, 164, 65, .55);
+  --dsw-alias-button-tool-bar-hover: rgba(217, 164, 65, .65);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(217, 164, 65, .3);
+
+  --dsw-alias-interactive-bg-hover: rgba(217, 164, 65, .09);
+  --dsw-alias-interactive-bg-active: rgba(217, 164, 65, .14);
+  --dsw-alias-interactive-bg-hover-accent: rgba(217, 164, 65, .18);
+  --dsw-alias-interactive-bg-hover-solid: rgba(32, 41, 65, .85);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, .16);
+
+  /* ---------- 边框：暖金微光 ---------- */
+  --dsw-alias-border-l1: rgba(217, 164, 65, .12);
+  --dsw-alias-border-l2: rgba(217, 164, 65, .2);
+  --dsw-alias-border-l2-darkmode-thin: rgba(217, 164, 65, .14);
+  --dsw-alias-border-l3: rgba(217, 164, 65, .28);
+  --dsw-alias-border-l4: rgba(217, 164, 65, .38);
+  --dsw-alias-border-inverted: rgba(217, 164, 65, .24);
+  --dsw-alias-border-inverted2: rgba(217, 164, 65, .16);
+
+  /* ---------- 侧边栏：冷灰蓝调、略亮一档 ---------- */
+  --dsw-specific-sidebar-fill: rgba(24, 30, 48, .82);
+  --dsw-specific-sidebar-nav-item-active: rgba(33, 41, 63, .78);
+  --dsw-specific-sidebar-nav-item-active-accent: rgba(38, 47, 70, .82);
+  --dsw-specific-sidebar-nav-item-hover: rgba(28, 35, 54, .72);
+
+  /* ---------- 对话气泡：半透明 ---------- */
+  --dsw-specific-bubble: rgba(23, 30, 46, .66);
+  --dsw-specific-bubble-highlight: rgba(30, 39, 57, .7);
+
+  /* ---------- 输入框 ---------- */
+  --dsw-specific-input-major: rgba(20, 26, 40, .55);
+  --dsw-specific-login-input: rgba(18, 24, 38, .6);
+
+  /* ---------- 菜单 / 弹层 / 提示：接近实底保证可读 ---------- */
+  --dsw-specific-menu: rgba(26, 33, 51, .92);
+  --dsw-specific-selector: rgba(28, 36, 54, .9);
+  --dsw-specific-tip: rgba(26, 33, 51, .9);
+  --dsw-alias-tooltip-bg: rgba(35, 44, 66, .95);
+  --dsw-alias-toast-bg: rgba(35, 45, 68, .95);
+
+  /* ---------- 代码块：接近实底保证可读 ---------- */
+  --dsw-alias-markdown-code-block: rgba(9, 13, 20, .88);
+  --dsw-alias-markdown-code-block-banner: rgba(16, 22, 34, .9);
+  --dsw-alias-markdown-inline-code: rgba(29, 36, 51, .8);
+  --dsw-alias-markdown-code-segment-selected: rgba(22, 29, 44, .8);
+  --dsw-alias-markdown-code-segment-unselected: rgba(14, 20, 32, .8);
+  --dsw-alias-markdown-citation: rgba(22, 27, 43, .7);
+  --dsw-alias-markdown-placeholder: rgba(18, 24, 38, .6);
+  --dsw-alias-markdown-tag: rgba(26, 34, 52, .75);
+
+  /* ---------- 状态色 ---------- */
+  --dsw-alias-state-success-primary: #5fd497;
+  --dsw-alias-state-success-secondary: #83ddaa;
+  --dsw-alias-state-success-tertiary: rgba(95, 212, 151, .16);
+
+  /* ---------- 滚动条 ---------- */
+  --dsh-scrollbar-thumb: rgba(80, 92, 116, .9);
+  --dsh-scrollbar-thumb-hover: #d9a441;
+  --dsw-alias-scrollbar-bg-l1: rgba(80, 92, 116, .9);
+  --dsw-alias-scrollbar-bg-l2: rgba(80, 92, 116, .9);
+  --dsw-alias-scrollbar-hover-l1: #d9a441;
+  --dsw-alias-scrollbar-hover-l2: #d9a441;
+
+  /* ---------- 思考过程渐隐 ---------- */
+  --dsw-linear-gradient-think: linear-gradient(180deg, #131826 20.19%, rgba(19, 24, 38, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #171d2d 20.19%, rgba(23, 29, 45, 0) 100%);
+}
+
+/* ---------- 细节润色 ---------- */
+
+/* 代码语法高亮：固定为深色配色，不受主题开关影响 */
+html body:not([data-ds-dark-theme]), html body[data-ds-dark-theme] {
+  --shiki-token-constant: #4dabf7;
+  --shiki-token-string: #69db7c;
+  --shiki-token-comment: #8b93a1;
+  --shiki-token-keyword: #f2a2c3;
+  --shiki-token-parameter: #ffa94d;
+  --shiki-token-function: #b197fc;
+  --shiki-token-string-expression: #8ce99a;
+  --shiki-token-punctuation: #c8ced8;
+  --shiki-token-link: #74c0fc;
+}
+html body ::selection, html body[data-ds-dark-theme] ::selection {
+  background: rgba(217, 164, 65, .32);
+}
+
+/* ---------- DeepSeek 字标徽章：金色镂空 + 金色实体字（与界面强调色统一） ---------- */
+html body svg[viewBox="0 0 182 24"] rect[width="52"] {
+  fill: none;
+  stroke: var(--dsw-alias-brand-primary);
+  stroke-width: 0.75;
+}
+html body svg[viewBox="0 0 182 24"] rect[width="52"] + g path {
+  fill: var(--dsw-alias-brand-primary);
+  stroke: var(--dsw-alias-brand-primary); /* 同色描边让字更粗 */
+  stroke-width: 0.8;
+  paint-order: fill stroke;
+}
+
+/* ---------- 侧边工作区（会话/工作区列表）：星尘金点（可见但克制，缓缓上浮） ---------- */
+html body .qDHVXG_root {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><g fill='rgba(217,164,65,0.6)'><circle cx='80' cy='120' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.7s' begin='0.1s' repeatCount='indefinite'/></circle><circle cx='240' cy='60' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.9s' begin='0.9s' repeatCount='indefinite'/></circle><circle cx='380' cy='180' r='1.7'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.0s' begin='2.7s' repeatCount='indefinite'/></circle><circle cx='520' cy='90' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.3s' begin='0.3s' repeatCount='indefinite'/></circle><circle cx='140' cy='300' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.2s' begin='0.1s' repeatCount='indefinite'/></circle><circle cx='300' cy='260' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.7s' begin='2.0s' repeatCount='indefinite'/></circle><circle cx='460' cy='340' r='1.6'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.3s' begin='0.8s' repeatCount='indefinite'/></circle><circle cx='560' cy='430' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.8s' begin='2.2s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.6'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.7s' begin='2.4s' repeatCount='indefinite'/></circle><circle cx='240' cy='540' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='0.0s' repeatCount='indefinite'/></circle><circle cx='400' cy='500' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='2.8s' repeatCount='indefinite'/></circle><circle cx='540' cy='560' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.0s' begin='0.6s' repeatCount='indefinite'/></circle><circle cx='180' cy='170' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.5s' begin='1.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.4s' begin='0.4s' repeatCount='indefinite'/></circle><circle cx='60' cy='380' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.2s' begin='2.4s' repeatCount='indefinite'/></circle><circle cx='320' cy='420' r='1.2'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='2.9s' repeatCount='indefinite'/></circle><circle cx='640' cy='200' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.5s' begin='3.9s' repeatCount='indefinite'/></circle><circle cx='520' cy='350' r='1.2'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.1s' begin='2.2s' repeatCount='indefinite'/></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.5s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.9000000000000001'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='2.8s' begin='0.2s' repeatCount='indefinite'/></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.5s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.9000000000000001'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='2.8s' begin='0.2s' repeatCount='indefinite'/></circle></g></svg>");
+  background-size: 600px 600px;
+  animation: ft-gold-dust-rise 30s linear infinite;
+}
+@keyframes ft-gold-dust-rise {
+  from { background-position: 0 600px; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body .qDHVXG_root { animation: none; }
+}
+
+/* ---------- 工作区选中项目：金色边框替代底色高亮 ---------- */
+html body .YDXeBa_selected {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(217, 164, 65, .55);
+}
+html body .YDXeBa_selected:hover {
+  background: rgba(217, 164, 65, .06) !important;
+}
+
+/* ---------- 会话框下方可交互元素：统一金色 ---------- */
+html body .uV2eYG_add,
+html body .Sh0Q9G_trigger,
+html body ._7KE1Ra_trigger,
+html body .JObwrW_trigger {
+  border-color: rgba(217, 164, 65, .5) !important;
+  color: #e6b95a !important;
+  background-color: rgba(217, 164, 65, .07) !important;
+}
+html body .uV2eYG_add:hover,
+html body .Sh0Q9G_trigger:hover,
+html body ._7KE1Ra_trigger:hover,
+html body .JObwrW_trigger:hover {
+  border-color: rgba(217, 164, 65, .8) !important;
+  color: #f0c878 !important;
+  background-color: rgba(217, 164, 65, .14) !important;
+}
+
+/* ---------- 会话框下方金色文字：最细字体 ---------- */
+html body .Sh0Q9G_trigger,
+html body ._7KE1Ra_trigger {
+  font-weight: 100 !important;
+}
+
+/* ---------- 侧边栏底部「设置」：文字白色、图标金色 ---------- */
+html body .VOzbGW_trigger {
+  color: #f0ece4 !important;
+}
+html body .VOzbGW_trigger:hover {
+  color: #f0ece4 !important;
+}
+html body .VOzbGW_trigger svg {
+  color: #e6b95a !important;
+}
+html body .VOzbGW_trigger:hover svg {
+  color: #f0c878 !important;
+}
+html body .VOzbGW_trigger svg * {
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* ---------- 发送按钮：金色镂空 + 光晕（保留镂空又更醒目） ---------- */
+html body .uV2eYG_primary {
+  background-color: transparent !important;
+  border: 1.5px solid rgba(217, 164, 65, .9) !important;
+  color: #f0c878 !important;
+  box-shadow: 0 0 12px rgba(217, 164, 65, .3), inset 0 0 8px rgba(217, 164, 65, .1) !important;
+}
+html body .uV2eYG_primary:hover {
+  background-color: rgba(217, 164, 65, .16) !important;
+  border-color: rgba(217, 164, 65, 1) !important;
+  color: #f5d288 !important;
+  box-shadow: 0 0 18px rgba(217, 164, 65, .45), inset 0 0 10px rgba(217, 164, 65, .14) !important;
+}
+html body .uV2eYG_primary svg * {
+  fill: currentColor !important;
+}
+
+/* ---------- 顶部「标准模式」选择：金色 ---------- */
+html body .wSkVaW_headerActions,
+html body .SVAs4q_label {
+  color: #e6b95a !important;
+}
+html body .wSkVaW_headerActions:hover,
+html body .SVAs4q_label:hover {
+  color: #f0c878 !important;
+}
+
+/* ---------- 右上角「Session log」：金色 ---------- */
+html body .nL4_yW_sessionLogButton {
+  color: #e6b95a !important;
+}
+html body .nL4_yW_sessionLogButton:hover {
+  color: #f0c878 !important;
+}
+
+/* ---------- 头部会话标题：降一档亮度，缓解拥挤感 ---------- */
+html body .wSkVaW_titleCluster {
+  color: #c0c6d2 !important;
+}
+
+/* ---------- 对话列与输入卡片铺满主区宽度 ---------- */
+html body .Md3f7G_column,
+html body .uV2eYG_card {
+  max-width: none !important;
+}
+html body .gdEzaW_userStack {
+  max-width: min(720px, 90%) !important;
+}
+
+/* ---------- 消息与输入区左右留出头像通道（44px），防裁切 ---------- */
+html body .Md3f7G_column,
+html body .uV2eYG_card {
+  box-sizing: border-box !important;
+  padding-left: 44px !important;
+  padding-right: 44px !important;
+}
+
+/* 消息行作为头像的定位基准（CSS 持久，重渲染不丢） */
+html body .gdEzaW_userRow,
+html body .Sxvs8a_root {
+  position: relative !important;
+}
+
+/* ---------- 用户气泡：尊贵小金边 ---------- */
+html body .gdEzaW_bubble {
+  box-shadow: inset 0 0 0 1px rgba(217, 164, 65, .6) !important;
+}
+
+/* ---------- 消息操作图标（点赞等）：金边 ---------- */
+html body .p-xYUq_action,
+html body ._8_XoUG_action {
+  box-sizing: border-box !important;
+  border: 1px solid rgba(217, 164, 65, .5) !important;
+  background: rgba(217, 164, 65, .07) !important;
+}
+html body .p-xYUq_action:hover,
+html body ._8_XoUG_action:hover {
+  border-color: rgba(217, 164, 65, .85) !important;
+  background: rgba(217, 164, 65, .15) !important;
+}
+
+/* 链接悬停 */
+html body a:hover, html body[data-ds-dark-theme] a:hover {
+  color: #f0c878;
+}
+
+/* ---------- 主题强调色变量（JS 组件引用，切换皮肤自动变色） ---------- */
+:root {
+  --ft-accent: #d9a441;
+  --ft-accent-strong: #e6b95a;
+  --ft-accent-soft: rgba(217, 164, 65, .5);
+  --ft-accent-softer: rgba(217, 164, 65, .35);
+  --ft-accent-bg: rgba(217, 164, 65, .08);
+  --ft-status: rgba(200, 206, 218, .72);
+  --ft-status-shadow: rgba(0, 0, 0, .55);
+}
+
+/* ---------- 胶囊半透明滚动条 ---------- */
+html body ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html body ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-color: rgba(217, 164, 65, .3);
+  background-clip: padding-box;
+}
+html body ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(217, 164, 65, .55);
+}
+html body ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 底部会话统计栏：取消宽度上限，避免右侧信息被截断 */
+html body .FJxK0a_root,
+html body[data-ds-dark-theme] .FJxK0a_root {
+  max-width: none !important;
+  width: 100% !important;
+  padding: 4px 24px 0 !important;
+  text-overflow: clip;
+}
+
+
+/* ===== 权限弹窗毛玻璃 ===== */
+/* 等待审批卡：加背景模糊，底下内容不再干扰阅读 */
+html body .bqrRRG_card,
+html body[data-ds-dark-theme] .bqrRRG_card {
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+/* Full access 确认等模态弹窗：半透明玻璃卡片 + 模糊 */
+html body ._dialog_15u5s_22,
+html body[data-ds-dark-theme] ._dialog_15u5s_22 {
+  background: rgba(17, 22, 34, .78);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+/* 弹窗遮罩模糊加强 */
+html body,
+html body[data-ds-dark-theme] {
+  --dsw-mask-blur: 14px;
+}
+
+
+/* ---------- 顶部标题栏：毛玻璃 ---------- */
+html body .wSkVaW_header,
+html body[data-ds-dark-theme] .wSkVaW_header {
+  background: rgba(14, 18, 28, .55) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}

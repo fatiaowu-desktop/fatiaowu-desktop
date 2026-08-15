@@ -1,0 +1,487 @@
+/* ============================================================
+   发条屋 · 猩红熔岩皮肤 (Scarlet Lava)
+   熔岩黑夜 + 猩红光晕 + 余烬粒子，狂暴但有章法
+   ============================================================ */
+
+html {
+  color-scheme: dark;
+  background-color: #130707; /* 兜底底色 */
+}
+
+/* 背景：渐变光斑图案（光晕呼吸扰动，去掉旧静态粒子层） */
+html body {
+  background-color: transparent;
+  background-image:
+    radial-gradient(1000px 750px at 88% -8%, rgba(255, 71, 87, .18), transparent 60%),
+    radial-gradient(900px 700px at -12% 110%, rgba(255, 107, 53, .14), transparent 62%),
+    linear-gradient(180deg, #200e0e 0%, #150808 55%, #0b0404 100%);
+  background-attachment: fixed;
+  background-size: cover, cover, cover;
+  animation: ft-glow-breathe 14s ease-in-out infinite alternate;
+}
+@keyframes ft-glow-breathe {
+  from { background-size: 100% 100%, 100% 100%, cover; }
+  to   { background-size: 113% 113%, 113% 113%, cover; }
+}
+
+/* 令牌覆盖：浅色/深色模式都生效（优先级高于应用自身） */
+html body, html body[data-ds-dark-theme] {
+
+  /* ---------- 背景：透明，透出渐变 ---------- */
+  --dsw-alias-bg-base: transparent;
+  --dsw-alias-bg-layer-1: rgba(32, 10, 10, .62);
+  --dsw-alias-bg-layer-2: rgba(38, 12, 12, .66);
+  --dsw-alias-bg-layer-3: rgba(46, 15, 15, .7);
+  --dsw-alias-bg-overlay: rgba(52, 20, 20, .8);
+  --dsw-alias-bg-module-platform: rgba(35, 11, 11, .65);
+  --dsw-alias-bg-multi-select: rgba(34, 10, 10, .65);
+  --dsw-alias-bg-skeleton: rgba(255, 71, 87, .08);
+  --dsw-alias-bg-mask-1: rgba(3, 1, 1, .66);
+  --dsw-alias-bg-mask-2: rgba(3, 1, 1, .35);
+  --dsw-alias-bg-mask-drop: rgba(36, 10, 10, .76);
+
+  /* ---------- 文字：暖白提亮 ---------- */
+  --dsw-alias-label-primary: #f6e8e8;
+  --dsw-alias-label-secondary: #cba4a4;
+  --dsw-alias-label-tertiary: #9a6f6f;
+  --dsw-alias-label-caption: #7d5b5b;
+  --dsw-alias-label-dimmed: #533434;
+  --dsw-alias-label-primary-foreground: #1c0306;
+  --dsw-alias-label-primary-inverted: #f6e8e8;
+  --dsw-alias-label-primary-bluish: #f6e8e8;
+  --dsw-alias-label-primary-dimmed: #e8d6d6;
+
+  /* ---------- 品牌强调：黄铜金 ---------- */
+  --dsw-alias-brand-primary: #ff4757;
+  --dsw-alias-brand-primary-invert: #130707;
+  --dsw-alias-brand-text: #ff6b81;
+  --dsw-alias-state-business-primary: #ff6b81;
+  --dsw-alias-state-business-tertiary: rgba(255, 71, 87, .18);
+  --dsw-alias-button-info-fill: #e6394a;
+  --dsw-alias-button-info-hover: #ff4757;
+  --dsw-alias-button-primary-fill: #ff4757;
+  --dsw-alias-button-primary-hover: #ff7a8c;
+  --dsw-alias-button-primary-dimmed: rgba(255, 71, 87, .2);
+
+  /* ---------- 按钮 / 交互 ---------- */
+  --dsw-alias-button-contrast-fill: rgba(46, 18, 18, .92);
+  --dsw-alias-button-elevated-fill: rgba(42, 14, 14, .72);
+  --dsw-alias-button-floating-fill: rgba(26, 34, 51, .78);
+  --dsw-alias-button-floating-hover: rgba(52, 20, 20, .85);
+  --dsw-alias-button-ghost-active-fill: rgba(52, 20, 20, .8);
+  --dsw-alias-button-ghost-active-border: #ff4757;
+  --dsw-alias-button-ghost-active-hover: rgba(62, 24, 24, .85);
+  --dsw-alias-button-tool-bar-fill: rgba(255, 71, 87, .55);
+  --dsw-alias-button-tool-bar-hover: rgba(255, 71, 87, .65);
+  --dsw-alias-button-tool-bar-fill-invisible: rgba(255, 71, 87, .3);
+
+  --dsw-alias-interactive-bg-hover: rgba(255, 71, 87, .09);
+  --dsw-alias-interactive-bg-active: rgba(255, 71, 87, .14);
+  --dsw-alias-interactive-bg-hover-accent: rgba(255, 71, 87, .18);
+  --dsw-alias-interactive-bg-hover-solid: rgba(52, 20, 20, .85);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, .16);
+
+  /* ---------- 边框：暖金微光 ---------- */
+  --dsw-alias-border-l1: rgba(255, 71, 87, .12);
+  --dsw-alias-border-l2: rgba(255, 71, 87, .2);
+  --dsw-alias-border-l2-darkmode-thin: rgba(255, 71, 87, .14);
+  --dsw-alias-border-l3: rgba(255, 71, 87, .28);
+  --dsw-alias-border-l4: rgba(255, 71, 87, .38);
+  --dsw-alias-border-inverted: rgba(255, 71, 87, .24);
+  --dsw-alias-border-inverted2: rgba(255, 71, 87, .16);
+
+  /* ---------- 侧边栏：冷灰蓝调、略亮一档 ---------- */
+  --dsw-specific-sidebar-fill: rgba(38, 14, 14, .86);
+  --dsw-specific-sidebar-nav-item-active: rgba(52, 20, 20, .8);
+  --dsw-specific-sidebar-nav-item-active-accent: rgba(60, 24, 24, .84);
+  --dsw-specific-sidebar-nav-item-hover: rgba(46, 16, 16, .74);
+
+  /* ---------- 对话气泡：半透明 ---------- */
+  --dsw-specific-bubble: rgba(23, 30, 46, .66);
+  --dsw-specific-bubble-highlight: rgba(30, 39, 57, .7);
+
+  /* ---------- 输入框 ---------- */
+  --dsw-specific-input-major: rgba(20, 26, 40, .55);
+  --dsw-specific-login-input: rgba(32, 10, 10, .62);
+
+  /* ---------- 菜单 / 弹层 / 提示：接近实底保证可读 ---------- */
+  --dsw-specific-menu: rgba(40, 14, 14, .92);
+  --dsw-specific-selector: rgba(46, 16, 16, .9);
+  --dsw-specific-tip: rgba(40, 14, 14, .9);
+  --dsw-alias-tooltip-bg: rgba(52, 20, 20, .95);
+  --dsw-alias-toast-bg: rgba(52, 20, 20, .95);
+
+  /* ---------- 代码块：接近实底保证可读 ---------- */
+  --dsw-alias-markdown-code-block: rgba(13, 5, 5, .9);
+  --dsw-alias-markdown-code-block-banner: rgba(22, 8, 8, .92);
+  --dsw-alias-markdown-inline-code: rgba(42, 15, 15, .8);
+  --dsw-alias-markdown-code-segment-selected: rgba(42, 15, 15, .82);
+  --dsw-alias-markdown-code-segment-unselected: rgba(22, 7, 7, .8);
+  --dsw-alias-markdown-citation: rgba(38, 12, 12, .72);
+  --dsw-alias-markdown-placeholder: rgba(32, 10, 10, .62);
+  --dsw-alias-markdown-tag: rgba(42, 14, 14, .76);
+
+  /* ---------- 状态色 ---------- */
+  --dsw-alias-state-success-primary: #5fd497;
+  --dsw-alias-state-success-secondary: #83ddaa;
+  --dsw-alias-state-success-tertiary: rgba(95, 212, 151, .16);
+
+  /* ---------- 滚动条 ---------- */
+  --dsh-scrollbar-thumb: rgba(96, 42, 42, .9);
+  --dsh-scrollbar-thumb-hover: #ff4757;
+  --dsw-alias-scrollbar-bg-l1: rgba(96, 42, 42, .9);
+  --dsw-alias-scrollbar-bg-l2: rgba(96, 42, 42, .9);
+  --dsw-alias-scrollbar-hover-l1: #ff4757;
+  --dsw-alias-scrollbar-hover-l2: #ff4757;
+
+  /* ---------- 思考过程渐隐 ---------- */
+  --dsw-linear-gradient-think: linear-gradient(180deg, #190b0b 20.19%, rgba(19, 24, 38, 0) 100%);
+  --dsw-linear-think-select: linear-gradient(180deg, #1e1010 20.19%, rgba(23, 29, 45, 0) 100%);
+}
+
+/* ---------- 细节润色 ---------- */
+
+/* 代码语法高亮：固定为深色配色，不受主题开关影响 */
+html body:not([data-ds-dark-theme]), html body[data-ds-dark-theme] {
+  --shiki-token-constant: #4dabf7;
+  --shiki-token-string: #69db7c;
+  --shiki-token-comment: #8b93a1;
+  --shiki-token-keyword: #f2a2c3;
+  --shiki-token-parameter: #ffa94d;
+  --shiki-token-function: #b197fc;
+  --shiki-token-string-expression: #8ce99a;
+  --shiki-token-punctuation: #c8ced8;
+  --shiki-token-link: #74c0fc;
+}
+html body ::selection, html body[data-ds-dark-theme] ::selection {
+  background: rgba(255, 71, 87, .32);
+}
+
+/* ---------- DeepSeek 字标徽章：金色镂空 + 金色实体字（与界面强调色统一） ---------- */
+html body svg[viewBox="0 0 182 24"] rect[width="52"] {
+  fill: none;
+  stroke: var(--dsw-alias-brand-primary);
+  stroke-width: 0.75;
+}
+html body svg[viewBox="0 0 182 24"] rect[width="52"] + g path {
+  fill: var(--dsw-alias-brand-primary);
+  stroke: var(--dsw-alias-brand-primary); /* 同色描边让字更粗 */
+  stroke-width: 0.8;
+  paint-order: fill stroke;
+}
+
+/* ---------- 侧边栏：暗红玻璃（无暗角·自然融入主区） ---------- */
+html body .hHd-Xa_root {
+  background-color: transparent;
+  background-image:
+    radial-gradient(420px 240px at 50% 0%, rgba(255, 71, 87, .10), transparent 70%),
+    linear-gradient(180deg, rgba(46, 14, 14, .6) 0%, rgba(30, 9, 9, .66) 55%, rgba(18, 5, 5, .72) 100%);
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+}
+
+/* 工作区列表不再叠加旧余烬点 */
+html body .qDHVXG_root {
+  background-image: none;
+}
+
+
+/* ---------- 工作区选中项目：金色边框替代底色高亮 ---------- */
+html body .YDXeBa_selected {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 71, 87, .55);
+}
+html body .YDXeBa_selected:hover {
+  background: rgba(255, 71, 87, .06) !important;
+}
+
+/* ---------- 会话框下方可交互元素：统一金色 ---------- */
+html body .uV2eYG_add,
+html body .Sh0Q9G_trigger,
+html body ._7KE1Ra_trigger,
+html body .JObwrW_trigger {
+  border-color: rgba(255, 71, 87, .5) !important;
+  color: #ff6b81 !important;
+  background-color: rgba(255, 71, 87, .07) !important;
+}
+html body .uV2eYG_add:hover,
+html body .Sh0Q9G_trigger:hover,
+html body ._7KE1Ra_trigger:hover,
+html body .JObwrW_trigger:hover {
+  border-color: rgba(255, 71, 87, .8) !important;
+  color: #ffa3ad !important;
+  background-color: rgba(255, 71, 87, .14) !important;
+}
+
+/* ---------- 会话框下方金色文字：最细字体 ---------- */
+html body .Sh0Q9G_trigger,
+html body ._7KE1Ra_trigger {
+  font-weight: 100 !important;
+}
+
+/* ---------- 侧边栏底部「设置」：文字白色、图标金色 ---------- */
+html body .VOzbGW_trigger {
+  color: #f6e8e8 !important;
+}
+html body .VOzbGW_trigger:hover {
+  color: #f6e8e8 !important;
+}
+html body .VOzbGW_trigger svg {
+  color: #ff6b81 !important;
+}
+html body .VOzbGW_trigger:hover svg {
+  color: #ffa3ad !important;
+}
+html body .VOzbGW_trigger svg * {
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* ---------- 发送按钮：金色镂空 + 光晕（保留镂空又更醒目） ---------- */
+html body .uV2eYG_primary {
+  background-color: transparent !important;
+  border: 1.5px solid rgba(255, 71, 87, .9) !important;
+  color: #ffa3ad !important;
+  box-shadow: 0 0 12px rgba(255, 71, 87, .3), inset 0 0 8px rgba(255, 71, 87, .1) !important;
+}
+html body .uV2eYG_primary:hover {
+  background-color: rgba(255, 71, 87, .16) !important;
+  border-color: rgba(255, 71, 87, 1) !important;
+  color: #f5d288 !important;
+  box-shadow: 0 0 18px rgba(255, 71, 87, .45), inset 0 0 10px rgba(255, 71, 87, .14) !important;
+}
+html body .uV2eYG_primary svg * {
+  fill: currentColor !important;
+}
+
+/* ---------- 顶部「标准模式」选择：金色 ---------- */
+html body .wSkVaW_headerActions,
+html body .SVAs4q_label {
+  color: #ff6b81 !important;
+}
+html body .wSkVaW_headerActions:hover,
+html body .SVAs4q_label:hover {
+  color: #ffa3ad !important;
+}
+
+/* ---------- 右上角「Session log」：金色 ---------- */
+html body .nL4_yW_sessionLogButton {
+  color: #ff6b81 !important;
+}
+html body .nL4_yW_sessionLogButton:hover {
+  color: #ffa3ad !important;
+}
+
+/* ---------- 头部会话标题：降一档亮度，缓解拥挤感 ---------- */
+html body .wSkVaW_titleCluster {
+  color: #c0c6d2 !important;
+}
+
+/* ---------- 对话列与输入卡片铺满主区宽度 ---------- */
+html body .Md3f7G_column,
+html body .uV2eYG_card {
+  max-width: none !important;
+}
+html body .gdEzaW_userStack {
+  max-width: min(720px, 90%) !important;
+}
+
+/* ---------- 消息与输入区左右留出头像通道（44px），防裁切 ---------- */
+html body .Md3f7G_column,
+html body .uV2eYG_card {
+  box-sizing: border-box !important;
+  padding-left: 44px !important;
+  padding-right: 44px !important;
+}
+
+/* 消息行作为头像的定位基准（CSS 持久，重渲染不丢） */
+html body .gdEzaW_userRow,
+html body .Sxvs8a_root {
+  position: relative !important;
+}
+
+/* ---------- 用户气泡：尊贵小金边 ---------- */
+html body .gdEzaW_bubble {
+  box-shadow: inset 0 0 0 1px rgba(255, 71, 87, .6) !important;
+}
+
+/* ---------- 消息操作图标（点赞等）：金边 ---------- */
+html body .p-xYUq_action,
+html body ._8_XoUG_action {
+  box-sizing: border-box !important;
+  border: 1px solid rgba(255, 71, 87, .5) !important;
+  background: rgba(255, 71, 87, .07) !important;
+}
+html body .p-xYUq_action:hover,
+html body ._8_XoUG_action:hover {
+  border-color: rgba(255, 71, 87, .85) !important;
+  background: rgba(255, 71, 87, .15) !important;
+}
+
+/* 链接悬停 */
+html body a:hover, html body[data-ds-dark-theme] a:hover {
+  color: #ffa3ad;
+}
+
+/* ---------- 主题强调色变量（JS 组件引用，切换皮肤自动变色） ---------- */
+:root {
+  --ft-accent: #ff4757;
+  --ft-accent-strong: #ff6b81;
+  --ft-accent-soft: rgba(255, 71, 87, .5);
+  --ft-accent-softer: rgba(255, 71, 87, .35);
+  --ft-accent-bg: rgba(255, 71, 87, .08);
+  --ft-status: rgba(230, 205, 205, .78);
+  --ft-status-shadow: rgba(0, 0, 0, .6);
+}
+
+/* ---------- 暗红毛玻璃：输入卡片 ---------- */
+html body .uV2eYG_card {
+  background: rgba(45, 15, 15, .55) !important;
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 0.5px solid rgba(255, 120, 130, .35) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 -1px 0 rgba(255, 255, 255, .04) !important;
+}
+
+/* ---------- 暗红毛玻璃：用户气泡 ---------- */
+html body .gdEzaW_bubble {
+  background: rgba(48, 16, 16, .5) !important;
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  border: 1px solid rgba(255, 71, 87, .45) !important;
+  box-shadow: none !important;
+}
+
+/* ---------- 审批/警告提示：跟随猩红（不再是琥珀黄） ---------- */
+html body, html body[data-ds-dark-theme] {
+  --dsw-alias-state-warn-primary: #ff5f6e;
+  --dsw-alias-state-warn-secondary: rgba(255, 95, 110, .55);
+  --dsw-alias-state-warn-tertiary: rgba(255, 95, 110, .16);
+  --dsw-alias-state-warn-label: #ff8a94;
+}
+
+/* ---------- 侧边栏：上升的余烬（动态·克制·深渊在燃烧） ---------- */
+html body .hHd-Xa_root {
+  position: relative;
+}
+html body .hHd-Xa_root::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><g fill='rgba(255,140,80,0.5)'><circle cx='40' cy='30' r='1.4'/><circle cx='140' cy='80' r='1'/><circle cx='220' cy='40' r='1.2'/><circle cx='90' cy='140' r='0.9'/><circle cx='180' cy='180' r='1.3'/><circle cx='50' cy='220' r='1'/><circle cx='240' cy='210' r='0.8'/><circle cx='130' cy='240' r='1.1'/></g><g fill='rgba(255,220,150,0.7)'><circle cx='40' cy='30' r='0.7'/><circle cx='180' cy='180' r='0.6'/><circle cx='240' cy='210' r='0.5'/></g></svg>");
+  background-size: 260px 260px;
+  opacity: .55;
+  animation: ft-ember-rise 26s linear infinite;
+}
+@keyframes ft-ember-rise {
+  from { background-position: 0 260px; }
+  to { background-position: 0 0; }
+}
+/* 聊天区专用：图块 340px，循环走满一整块，杜绝跳帧 */
+@keyframes ft-ember-rise-wide {
+  from { background-position: 0 340px; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body .hHd-Xa_root::after { animation: none; }
+}
+
+/* ---------- 胶囊半透明滚动条 ---------- */
+html body ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+html body ::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-color: rgba(255, 71, 87, .3);
+  background-clip: padding-box;
+}
+html body ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 71, 87, .55);
+}
+html body ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 底部会话统计栏：取消宽度上限，避免右侧信息被截断 */
+html body .FJxK0a_root,
+html body[data-ds-dark-theme] .FJxK0a_root {
+  max-width: none !important;
+  width: 100% !important;
+  padding: 4px 24px 0 !important;
+  text-overflow: clip;
+}
+
+
+/* ===== 权限弹窗毛玻璃 ===== */
+/* 等待审批卡：加背景模糊，底下内容不再干扰阅读 */
+html body .bqrRRG_card,
+html body[data-ds-dark-theme] .bqrRRG_card {
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+/* Full access 确认等模态弹窗：半透明玻璃卡片 + 模糊 */
+html body ._dialog_15u5s_22,
+html body[data-ds-dark-theme] ._dialog_15u5s_22 {
+  background: rgba(32, 14, 14, .78);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  backdrop-filter: blur(22px) saturate(1.15);
+}
+
+/* 弹窗遮罩模糊加强 */
+html body,
+html body[data-ds-dark-theme] {
+  --dsw-mask-blur: 14px;
+}
+
+/* ---------- 会话区：熔岩粒子扰动 + 少量烟尘飘动（速度与侧栏余烬一致 26s） ---------- */
+html body .Md3f7G_root {
+  position: relative;
+  isolation: isolate; /* 独立层叠上下文，粒子层可靠地垫在内容底下 */
+}
+/* 粒子层：稀疏余烬上浮（同侧栏节奏） */
+html body .Md3f7G_root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='340' height='340'><g fill='rgba(255,150,90,0.5)'><circle cx='60' cy='40' r='1.6'/><circle cx='200' cy='110' r='1.2'/><circle cx='300' cy='60' r='1.4'/><circle cx='120' cy='200' r='1'/><circle cx='260' cy='250' r='1.3'/><circle cx='40' cy='300' r='1.1'/><circle cx='320' cy='300' r='0.9'/><circle cx='180' cy='330' r='1.2'/></g><g fill='rgba(255,225,160,0.6)'><circle cx='200' cy='110' r='0.8'/><circle cx='260' cy='250' r='0.7'/><circle cx='40' cy='300' r='0.6'/><circle cx='320' cy='300' r='0.6'/></g></svg>");
+  background-size: 340px 340px;
+  opacity: .55;
+  animation: ft-ember-rise-wide 26s linear infinite;
+}
+/* 烟尘层：淡暖色烟霭缓慢上浮（明显但克制） */
+html body .Md3f7G_root::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='760' height='560'><defs><filter id='b'><feGaussianBlur stdDeviation='40'/></filter></defs><g filter='url(#b)' fill='rgba(255,150,130,0.72)'><ellipse cx='190' cy='140' rx='140' ry='70'/><ellipse cx='560' cy='300' rx='170' ry='80'/><ellipse cx='330' cy='470' rx='130' ry='66'/><ellipse cx='80' cy='420' rx='110' ry='56'/></g></svg>");
+  background-size: 760px 560px;
+  opacity: .3;
+  animation: ft-smoke-rise 26s linear infinite;
+}
+@keyframes ft-smoke-rise {
+  from { background-position: 0 560px; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body .Md3f7G_root::before,
+  html body .Md3f7G_root::after,
+  html body { animation: none; }
+}
+
+
+/* ---------- 顶部标题栏：毛玻璃 ---------- */
+html body .wSkVaW_header,
+html body[data-ds-dark-theme] .wSkVaW_header {
+  background: rgba(34, 12, 12, .55) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
