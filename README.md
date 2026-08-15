@@ -26,6 +26,16 @@
 
 ---
 
+---
+
+## 🖼 一览
+
+三套皮肤，一键切换（`⌥⌘1` / `⌥⌘2` / `⌥⌘3`）：
+
+| 暗金·深夜（工作旗舰） | 翡翠·晨光（浅色护眼） | 猩红·熔岩（动态氛围） |
+|---|---|---|
+| ![暗金·深夜](screenshots/01-brass-web.png) | ![翡翠·晨光](screenshots/02-emerald-web.png) | ![猩红·熔岩](screenshots/03-scarlet-web.png) |
+
 ## 🖥 系统要求
 
 - macOS 14+（需要较新的 WebKit 以支持 `backdrop-filter`、`color-mix` 等）
