@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var skinMenuItems: [NSMenuItem] = []
     private var shortcutMonitor: Any? // ⌥⌘1/2/3 快捷键监听（绕过 WKWebView 抢键）
     private var browserWindows: [NSWindow] = [] // 内置浏览器窗口（保持引用防释放）
+    private var repaintWorkItem: DispatchWorkItem? // 强制重绘防抖
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 加载两套皮肤并读取上次选择
@@ -95,6 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NSApp.activate(ignoringOtherApps: true)
         loadURL()
         startBalanceMonitor()
+
+        // WKWebView 全屏切换/窗口尺寸变化后偶发陈旧渲染：强制重绘
+        NotificationCenter.default.addObserver(self, selector: #selector(forceRepaint(_:)), name: NSWindow.didEnterFullScreenNotification, object: window)
+        NotificationCenter.default.addObserver(self, selector: #selector(forceRepaint(_:)), name: NSWindow.didExitFullScreenNotification, object: window)
+        NotificationCenter.default.addObserver(self, selector: #selector(forceRepaint(_:)), name: NSWindow.didResizeNotification, object: window)
 
 
     }
@@ -746,6 +752,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true // 关掉窗口即退出
+    }
+
+    // 全屏/窗口尺寸变化后，WKWebView 偶发渲染陈旧（DOM 正确但画面是旧的），强制重绘
+    @objc private func forceRepaint(_ note: Notification) {
+        repaintWorkItem?.cancel()
+        let delay: Double = (note.name == NSWindow.didResizeNotification) ? 0.4 : 1.0
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self, let wv = self.webView else { return }
+            wv.setNeedsDisplay(wv.bounds)
+            wv.evaluateJavaScript("""
+            (function(){
+              try {
+                window.dispatchEvent(new Event('resize'));
+                var b = document.body;
+                if (b) {
+                  b.style.display = 'none';
+                  requestAnimationFrame(function(){ b.style.display = ''; });
+                }
+              } catch (e) {}
+            })()
+            """) { _, _ in }
+        }
+        repaintWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     // ================= 内置浏览器 =================

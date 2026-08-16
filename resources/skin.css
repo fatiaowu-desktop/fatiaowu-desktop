@@ -386,6 +386,7 @@ html body[data-ds-dark-theme] .wSkVaW_header {
   backdrop-filter: blur(18px) saturate(1.15);
 }
 
+
 /* ---------- 输入框：磨砂毛玻璃（更实 + 强模糊 + 淡金细边） ---------- */
 html body .uV2eYG_card {
   background: rgba(16, 21, 32, .74) !important;
