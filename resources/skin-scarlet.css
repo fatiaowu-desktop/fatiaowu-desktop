@@ -513,3 +513,31 @@ html body ._8HJdBW_group,
 html body[data-ds-dark-theme] ._8HJdBW_group {
   display: none !important;
 }
+
+
+/* ---------- 全屏切换时输入框吸附延迟：禁用框架布局过渡动画 ---------- */
+html body .pI_x6G_frame,
+html body[data-ds-dark-theme] .pI_x6G_frame {
+  transition: none !important;
+}
+
+
+/* ---------- 全屏切换偶发输入框悬浮：强制贴底（双重保险 + 短内容兜底） ---------- */
+html body .wSkVaW_scrollBody,
+html body[data-ds-dark-theme] .wSkVaW_scrollBody {
+  justify-content: flex-start !important;
+}
+html body .wSkVaW_composerSeat,
+html body[data-ds-dark-theme] .wSkVaW_composerSeat {
+  position: sticky !important;
+  bottom: 0 !important;
+  flex: none !important;
+  margin-top: auto !important; /* 消息少撑不满时，把输入框推到容器底部 */
+}
+
+
+/* ---------- 全屏时主内容列高度卡在旧状态：强制撑满视口，输入框贴底 ---------- */
+html body .wSkVaW_root,
+html body[data-ds-dark-theme] .wSkVaW_root {
+  min-height: 100vh !important;
+}
