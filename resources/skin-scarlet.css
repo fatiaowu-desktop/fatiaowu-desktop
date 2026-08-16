@@ -176,8 +176,17 @@ html body .hHd-Xa_root {
   background-image:
     radial-gradient(420px 240px at 50% 0%, rgba(255, 71, 87, .10), transparent 70%),
     linear-gradient(180deg, rgba(46, 14, 14, .6) 0%, rgba(30, 9, 9, .66) 55%, rgba(18, 5, 5, .72) 100%);
-  backdrop-filter: blur(20px) saturate(1.1);
+  /* 注意：backdrop-filter 不能直接加在根上，否则会绑架内部 fixed 弹窗（设置面板被囚禁在侧栏） */
+}
+/* 侧栏毛玻璃改到 ::before 伪元素（子元素，不产生包含块，弹窗正常） */
+html body .hHd-Xa_root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   -webkit-backdrop-filter: blur(20px) saturate(1.1);
+  backdrop-filter: blur(20px) saturate(1.1);
 }
 
 /* 工作区列表不再叠加旧余烬点 */
@@ -427,9 +436,9 @@ html body[data-ds-dark-theme] .bqrRRG_card {
 /* Full access 确认等模态弹窗：半透明玻璃卡片 + 模糊 */
 html body ._dialog_15u5s_22,
 html body[data-ds-dark-theme] ._dialog_15u5s_22 {
-  background: rgba(32, 14, 14, .78);
-  -webkit-backdrop-filter: blur(22px) saturate(1.15);
-  backdrop-filter: blur(22px) saturate(1.15);
+  background: rgba(46, 18, 18, .92);
+  -webkit-backdrop-filter: blur(26px) saturate(1.3);
+  backdrop-filter: blur(26px) saturate(1.3);
 }
 
 /* 弹窗遮罩模糊加强 */
@@ -484,4 +493,22 @@ html body[data-ds-dark-theme] .wSkVaW_header {
   background: rgba(34, 12, 12, .55) !important;
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
   backdrop-filter: blur(18px) saturate(1.15);
+}
+
+
+/* ---------- 设置面板：毛玻璃（原 66% 透明无模糊） ---------- */
+html body .VOzbGW_panel,
+html body[data-ds-dark-theme] .VOzbGW_panel {
+  background: rgba(44, 17, 17, .93) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(1.3);
+  backdrop-filter: blur(26px) saturate(1.3);
+  border: 1px solid rgba(255, 71, 87, .22);
+  box-shadow: var(--dsw-shadow-lv3), inset 0 1px 0 rgba(255, 255, 255, .08) !important;
+}
+
+
+/* ---------- 隐藏设置里的「外观」选项（与三套皮肤体系冲突，避免主题打架） ---------- */
+html body ._8HJdBW_group,
+html body[data-ds-dark-theme] ._8HJdBW_group {
+  display: none !important;
 }

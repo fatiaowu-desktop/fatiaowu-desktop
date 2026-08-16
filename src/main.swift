@@ -13,7 +13,7 @@ final class BrowserOpenButton: NSButton {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var statusLabel: NSTextField!
@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
 
         let config = WKWebViewConfiguration()
+        config.userContentController.add(self, name: "fatiaowuSetSkin")
         if let skin = AppDelegate.skinUserScript(css: skins[themeIndex], initialDark: themeIndex == 0) {
             config.userContentController.addUserScript(skin)
         }
@@ -94,6 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NSApp.activate(ignoringOtherApps: true)
         loadURL()
         startBalanceMonitor()
+
+
     }
 
     // ---------- 余额/消费监控 ----------
@@ -169,11 +172,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         let css = skins[themeIndex]
         webView?.evaluateJavaScript("window.__ftSetSkin && window.__ftSetSkin(\(AppDelegate.jsStringLiteral(css)), \(isDark ? "true" : "false"))") { _, _ in }
+        webView?.evaluateJavaScript("window.__ftMarkSkin && window.__ftMarkSkin(\(themeIndex))") { _, _ in }
         AppDelegate.log("已切换皮肤: \(skinNames[themeIndex])")
     }
 
     @objc private func selectSkin(_ sender: NSMenuItem) {
         applySkin(sender.tag)
+    }
+
+    // 设置面板「皮肤」选项 → 通知 Swift 换肤（与快捷键同一套 applySkin）
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "fatiaowuSetSkin" else { return }
+        if let index = message.body as? Int, index >= 0, index < skins.count {
+            applySkin(index)
+        } else if let n = message.body as? NSNumber {
+            applySkin(n.intValue)
+        }
     }
 
     // ⌥⌘1/2/3 快捷键：直接监听按键事件（按物理键位识别，不受输入法/键盘布局影响，
@@ -475,6 +489,93 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
           if (document.body) { watchEmojiButton(); }
           else { document.addEventListener('DOMContentLoaded', watchEmojiButton); }
 
+          // ===== 设置面板：皮肤栏目（插入通用设置区块内，Agent 预设之后，不置底） =====
+          window.__ftMarkSkin = function (idx) {
+            var cards = document.querySelectorAll('#ft-skin-section [data-ftskin]');
+            for (var i = 0; i < cards.length; i++) {
+              var on = parseInt(cards[i].getAttribute('data-ftskin'), 10) === idx;
+              cards[i].style.borderColor = on ? 'var(--ft-accent)' : 'var(--ft-accent-softer)';
+              cards[i].style.background = on ? 'var(--ft-accent-bg)' : 'transparent';
+              cards[i].style.boxShadow = on ? '0 0 0 1px var(--ft-accent), 0 4px 14px rgba(0,0,0,.35)' : 'none';
+            }
+          };
+          function ensureSkinSelector() {
+            var content = document.querySelector('.VOzbGW_content');
+            if (!content) return;
+            if (document.getElementById('ft-skin-section')) return;
+            var sec = document.createElement('div');
+            sec.id = 'ft-skin-section';
+            sec.style.cssText = 'flex-direction:column;gap:12px;padding:18px 14px;display:flex;border-bottom:1px solid var(--dsw-alias-border-l2);';
+            var head = document.createElement('div');
+            head.style.cssText = 'display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-primary);font-size:15px;font-weight:500;line-height:22px;';
+            var dot = document.createElement('span');
+            dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:var(--ft-accent);flex:none;';
+            head.appendChild(dot);
+            head.appendChild(document.createTextNode('皮肤'));
+            sec.appendChild(head);
+            var hint = document.createElement('div');
+            hint.style.cssText = 'color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;';
+            hint.textContent = '选择你喜欢的皮肤；也可用快捷键 ⌥⌘1 / ⌥⌘2 / ⌥⌘3 快速切换';
+            sec.appendChild(hint);
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:10px;';
+            var skins = [
+              { name: '暗金·深夜', bg: 'linear-gradient(160deg,#161c2e 0%,#101726 55%,#0a0e17 100%)', accent: 'rgba(217,164,65,0.85)', dark: true },
+              { name: '翡翠·晨光', bg: 'linear-gradient(160deg,#f0f5ea 0%,#e0e9de 55%,#d2e2d5 100%)', accent: 'rgba(15,157,110,0.9)', dark: false },
+              { name: '猩红·熔岩', bg: 'linear-gradient(160deg,#2b0e0e 0%,#180808 55%,#0b0404 100%)', accent: 'rgba(255,71,87,0.9)', dark: true }
+            ];
+            for (var k = 0; k < skins.length; k++) {
+              (function (idx) {
+                var s = skins[idx];
+                var card = document.createElement('button');
+                card.type = 'button';
+                card.setAttribute('data-ftskin', idx);
+                card.style.cssText = 'flex:1;min-width:0;padding:0;border-radius:14px;border:1px solid var(--ft-accent-softer);background:transparent;cursor:pointer;overflow:hidden;display:flex;flex-direction:column;transition:border-color .15s,box-shadow .15s;';
+                var prev = document.createElement('div');
+                prev.style.cssText = 'height:72px;background:' + s.bg + ';position:relative;flex:none;';
+                var side = document.createElement('div');
+                side.style.cssText = 'position:absolute;left:0;top:0;bottom:0;width:15px;background:' + s.accent + ';opacity:.55;';
+                var bubble = document.createElement('div');
+                bubble.style.cssText = 'position:absolute;left:24px;bottom:12px;width:54%;height:14px;border-radius:7px;background:' + (s.dark ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.65)') + ';border:1px solid ' + s.accent + ';';
+                var bubble2 = document.createElement('div');
+                bubble2.style.cssText = 'position:absolute;left:24px;top:12px;width:38%;height:9px;border-radius:5px;background:' + (s.dark ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.5)') + ';';
+                prev.appendChild(side);
+                prev.appendChild(bubble2);
+                prev.appendChild(bubble);
+                var name = document.createElement('div');
+                name.style.cssText = 'padding:8px 6px;font-size:13px;line-height:20px;text-align:center;color:var(--dsw-alias-label-primary);';
+                name.textContent = s.name;
+                card.appendChild(prev);
+                card.appendChild(name);
+                card.addEventListener('click', function () {
+                  try { window.webkit.messageHandlers.fatiaowuSetSkin.postMessage(idx); } catch (e) {}
+                });
+                row.appendChild(card);
+              })(k);
+            }
+            sec.appendChild(row);
+            // 插入到通用设置第一个栏目（Agent 预设）之后，不置底
+            var sections = content.querySelectorAll('._WvWnq_section, [class*="_section"]');
+            var anchor = sections.length > 0 ? sections[0] : null;
+            if (anchor && anchor.parentNode) {
+              if (anchor.nextSibling) { anchor.parentNode.insertBefore(sec, anchor.nextSibling); }
+              else { anchor.parentNode.appendChild(sec); }
+            } else if (content.firstChild) {
+              content.insertBefore(sec, content.firstChild);
+            } else {
+              content.appendChild(sec);
+            }
+            window.__ftMarkSkin(0);
+          }
+          function watchSkinSelector() {
+            ensureSkinSelector();
+            if (window.MutationObserver) {
+              new MutationObserver(function () { ensureSkinSelector(); }).observe(document.body, { childList: true, subtree: true });
+            }
+          }
+          if (document.body) { watchSkinSelector(); }
+          else { document.addEventListener('DOMContentLoaded', watchSkinSelector); }
+
           // 皮肤切换：替换 #fatiaowu-skin 样式内容（配色与背景整体换肤）
           window.__ftSetSkin = function (css, dark) {
             if (typeof dark === 'boolean') { __ftDark = dark; }
@@ -550,6 +651,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         retryTimer?.invalidate()
         retryTimer = nil
         statusLabel.isHidden = true
+        webView.evaluateJavaScript("window.__ftMarkSkin && window.__ftMarkSkin(\(themeIndex))") { _, _ in }
+        // TEMP 设置导航结构探针
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            self?.webView?.evaluateJavaScript("""
+            (function(){
+              var panel = document.querySelector('.VOzbGW_panel');
+              if (!panel) return 'no-panel';
+              var out = [];
+              // 找面板里所有直接可见的文本项（导航/内容），带 class
+              function walk(el, depth) {
+                if (depth > 4) return;
+                for (var i = 0; i < el.children.length; i++) {
+                  var c = el.children[i];
+                  var t = (c.textContent || '').trim();
+                  if (c.children.length === 0 && t.length < 30 && t.length > 0) {
+                    out.push('LEAF ' + t + ' | ' + c.tagName + '.' + String(c.className||'').substring(0,45));
+                  }
+                  walk(c, depth + 1);
+                }
+              }
+              walk(panel, 0);
+              return out.slice(0, 40).join('\n');
+            })()
+            """) { result, _ in
+                if let s = result as? String { AppDelegate.log("导航探针: \n\(s)") }
+            }
+        }
         diagnoseSkin()
     }
 
