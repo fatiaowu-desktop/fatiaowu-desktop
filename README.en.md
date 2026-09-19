@@ -23,6 +23,12 @@ Fatiaowu is a **Swift + AppKit + WKWebView** native macOS app. It does no AI inf
 | 💰 Balance monitor | Live DeepSeek balance & per-session spend (official API) |
 | 📊 Session stats | Turns / runtime / token stats fully shown at the bottom |
 | 🌋 Living skins | Scarlet: lava particles + smoke + breathing glows; Brass: firefly stardust in the workspace (all seamless loops) |
+| 🎙 Voice input | **On-device offline speech recognition** (free, audio never leaves the Mac); wake words “小鲸鱼 / 小金鱼”, auto-send when you stop talking |
+| 🔊 Read replies aloud | Auto-speaks each reply (toggleable); start talking to interrupt; 8-second continuation window needs no wake word |
+| ⚙️ Clockwork movement | Three meshed gears at the sidebar bottom, speed tracks real AI state; gauge shows **real token counts**, not estimates |
+| 🐋 Whale desktop pet | Swims, dodges the cursor, peeks curiously, double-click to feed, chases bubbles, naps when idle; draggable and throwable |
+| 🎵 Mechanical SFX | Synthesized with Web Audio (winding “click” etc.) — **zero audio files** |
+| 🧬 Upgrade-proof anchors | State detection uses semantic anchors (stats capsule / aria-label / visible text), never CSS-Module hash class names |
 
 ---
 
