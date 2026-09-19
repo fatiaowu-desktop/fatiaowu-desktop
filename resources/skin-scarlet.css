@@ -190,7 +190,7 @@ html body .hHd-Xa_root::before {
 }
 
 /* 工作区列表不再叠加旧余烬点 */
-html body .qDHVXG_root {
+html body .bhn1Oq_root {
   background-image: none;
 }
 
@@ -274,10 +274,10 @@ html body .SVAs4q_label:hover {
 }
 
 /* ---------- 右上角「Session log」：金色 ---------- */
-html body .nL4_yW_sessionLogButton {
+html body .nL4_yW_moreButton {
   color: #ff6b81 !important;
 }
-html body .nL4_yW_sessionLogButton:hover {
+html body .nL4_yW_moreButton:hover {
   color: #ffa3ad !important;
 }
 
@@ -287,16 +287,16 @@ html body .wSkVaW_titleCluster {
 }
 
 /* ---------- 对话列与输入卡片铺满主区宽度 ---------- */
-html body .Md3f7G_column,
+html body .EvIC1a_column,
 html body .uV2eYG_card {
   max-width: none !important;
 }
-html body .gdEzaW_userStack {
+html body .Sixlwa_userStack {
   max-width: min(720px, 90%) !important;
 }
 
 /* ---------- 消息与输入区左右留出头像通道（44px），防裁切 ---------- */
-html body .Md3f7G_column,
+html body .EvIC1a_column,
 html body .uV2eYG_card {
   box-sizing: border-box !important;
   padding-left: 44px !important;
@@ -304,13 +304,13 @@ html body .uV2eYG_card {
 }
 
 /* 消息行作为头像的定位基准（CSS 持久，重渲染不丢） */
-html body .gdEzaW_userRow,
-html body .Sxvs8a_root {
+html body .Sixlwa_userRow,
+html body .hWmORq_root {
   position: relative !important;
 }
 
 /* ---------- 用户气泡：尊贵小金边 ---------- */
-html body .gdEzaW_bubble {
+html body .Sixlwa_bubble {
   box-shadow: inset 0 0 0 1px rgba(255, 71, 87, .6) !important;
 }
 
@@ -353,7 +353,7 @@ html body .uV2eYG_card {
 }
 
 /* ---------- 暗红毛玻璃：用户气泡 ---------- */
-html body .gdEzaW_bubble {
+html body .Sixlwa_bubble {
   background: rgba(48, 16, 16, .5) !important;
   backdrop-filter: blur(14px) saturate(1.15);
   -webkit-backdrop-filter: blur(14px) saturate(1.15);
@@ -416,8 +416,8 @@ html body ::-webkit-scrollbar-track {
 }
 
 /* 底部会话统计栏：取消宽度上限，避免右侧信息被截断 */
-html body .FJxK0a_root,
-html body[data-ds-dark-theme] .FJxK0a_root {
+html body .bOPqQW_root,
+html body[data-ds-dark-theme] .bOPqQW_root {
   max-width: none !important;
   width: 100% !important;
   padding: 4px 24px 0 !important;
@@ -427,8 +427,8 @@ html body[data-ds-dark-theme] .FJxK0a_root {
 
 /* ===== 权限弹窗毛玻璃 ===== */
 /* 等待审批卡：加背景模糊，底下内容不再干扰阅读 */
-html body .bqrRRG_card,
-html body[data-ds-dark-theme] .bqrRRG_card {
+html body .mna1RW_card,
+html body[data-ds-dark-theme] .mna1RW_card {
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
   backdrop-filter: blur(18px) saturate(1.15);
 }
@@ -448,12 +448,12 @@ html body[data-ds-dark-theme] {
 }
 
 /* ---------- 会话区：熔岩粒子扰动 + 少量烟尘飘动（速度与侧栏余烬一致 26s） ---------- */
-html body .Md3f7G_root {
+html body .EvIC1a_root {
   position: relative;
   isolation: isolate; /* 独立层叠上下文，粒子层可靠地垫在内容底下 */
 }
 /* 粒子层：稀疏余烬上浮（同侧栏节奏） */
-html body .Md3f7G_root::before {
+html body .EvIC1a_root::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -465,7 +465,7 @@ html body .Md3f7G_root::before {
   animation: ft-ember-rise-wide 26s linear infinite;
 }
 /* 烟尘层：淡暖色烟霭缓慢上浮（明显但克制） */
-html body .Md3f7G_root::after {
+html body .EvIC1a_root::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -481,8 +481,8 @@ html body .Md3f7G_root::after {
   to { background-position: 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html body .Md3f7G_root::before,
-  html body .Md3f7G_root::after,
+  html body .EvIC1a_root::before,
+  html body .EvIC1a_root::after,
   html body { animation: none; }
 }
 
@@ -540,4 +540,76 @@ html body[data-ds-dark-theme] .wSkVaW_composerSeat {
 html body .wSkVaW_root,
 html body[data-ds-dark-theme] .wSkVaW_root {
   min-height: 100vh !important;
+}
+
+/* 品牌区：字标保留（不再隐藏），但去掉一切「框」 */
+/* ============================================================
+   左上角品牌区：去框 · 单色强调（DeepSeek Harness）
+   ------------------------------------------------------------
+   挂钩 dsh 侧栏品牌区（CSS-Module 类名前缀 hHd-Xa_ ，0.1.5 实测有效）。
+   同时用 [class$="_xxx"] 兜底，避免下次升级改哈希前缀后整段失挂。
+
+   为什么不包边：品牌区正下方就是「新会话」胶囊按钮，同款 1px 描边 +
+   同款全圆角叠在一起，品牌铭牌会被读成「第二个按钮」——两个一模一样的
+   胶囊对撞，是这版最显廉价的来源。所以改为「不加框，靠颜色立辨识度」：
+     鲸鱼标识     = 皮肤强调色
+     deepseek 字标 = 皮肤强调色（与鲸鱼同一色系，收成一体）
+     HARNESS 小牌  = 强调色实底 + 墨色字母（唯一的高对比焦点）
+   靠这处实底小牌的明暗反差立住「高级」，而不是靠外圈描边。
+   色值全部走皮肤变量 / 每套皮肤单独调过对比度，切皮肤即时跟随。
+   ============================================================ */
+html body .hHd-Xa_logoRow .hHd-Xa_brand,
+html body [class$="_logoRow"] [class$="_brand"] {
+  overflow: visible !important;
+}
+html body .hHd-Xa_logoRow .hHd-Xa_brandIdentity,
+html body [class$="_logoRow"] [class$="_brandIdentity"] {
+  height: auto !important;
+  gap: 10px !important;
+}
+
+/* 小鲸鱼：主形锐利，只留一层贴身的色晕（不要糊开的雾） */
+html body .hHd-Xa_logoRow .hHd-Xa_brandMark,
+html body [class$="_logoRow"] [class$="_brandMark"] {
+  color: var(--ft-accent) !important;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45)) drop-shadow(0 0 5px rgba(255, 71, 87, .30));
+  transition: filter .22s ease, transform .22s ease;
+}
+
+/* 字标本体：无边框 / 无底色 / 无内阴影，纯字形 —— 整条染成强调色 */
+html body .hHd-Xa_logoRow .hHd-Xa_brandName,
+html body [class$="_logoRow"] [class$="_brandName"] {
+  position: relative;
+  box-sizing: border-box;
+  flex: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  width: max-content !important;
+  min-width: max-content !important;
+  height: 26px !important;
+  padding: 0 !important;
+  margin: 0;
+  border: 0 none !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  /* SVG 内部是双色：字母与牌底 = currentColor，牌内字母 = --dsw-alias-label-primary-inverted。
+     皮肤把该变量调浅/调深时牌内字母会糊成一片，这里在品牌作用域内重新配成墨色，
+     保证「强调色实底 + 墨色字母」永远清晰。 */
+  --dsw-alias-label-primary-inverted: #2a0d11;
+  color: var(--ft-accent) !important;
+  -webkit-font-smoothing: antialiased;
+  transition: color .2s ease, filter .2s ease;
+}
+
+/* 悬停：只提亮 + 一圈更紧的色晕，依旧不出现任何框（可点区域＝品牌区，点击新建会话） */
+html body .hHd-Xa_logoRow .hHd-Xa_brand:hover .hHd-Xa_brandName,
+html body [class$="_logoRow"] [class$="_brand"]:hover [class$="_brandName"] {
+  color: var(--ft-accent-strong) !important;
+  filter: drop-shadow(0 0 9px rgba(255, 71, 87, .46));
+}
+html body .hHd-Xa_logoRow .hHd-Xa_brand:hover .hHd-Xa_brandMark,
+html body [class$="_logoRow"] [class$="_brand"]:hover [class$="_brandMark"] {
+  transform: translateY(-.5px);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45)) drop-shadow(0 0 10px rgba(255, 71, 87, .46));
 }

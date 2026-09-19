@@ -166,7 +166,7 @@ html body svg[viewBox="0 0 182 24"] rect[width="52"] + g path {
 }
 
 /* ---------- 侧边工作区（会话/工作区列表）：星尘金点（可见但克制，缓缓上浮） ---------- */
-html body .qDHVXG_root {
+html body .bhn1Oq_root {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><g fill='rgba(217,164,65,0.6)'><circle cx='80' cy='120' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.7s' begin='0.1s' repeatCount='indefinite'/></circle><circle cx='240' cy='60' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.9s' begin='0.9s' repeatCount='indefinite'/></circle><circle cx='380' cy='180' r='1.7'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.0s' begin='2.7s' repeatCount='indefinite'/></circle><circle cx='520' cy='90' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.3s' begin='0.3s' repeatCount='indefinite'/></circle><circle cx='140' cy='300' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.2s' begin='0.1s' repeatCount='indefinite'/></circle><circle cx='300' cy='260' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.7s' begin='2.0s' repeatCount='indefinite'/></circle><circle cx='460' cy='340' r='1.6'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.3s' begin='0.8s' repeatCount='indefinite'/></circle><circle cx='560' cy='430' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.8s' begin='2.2s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.6'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.7s' begin='2.4s' repeatCount='indefinite'/></circle><circle cx='240' cy='540' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='0.0s' repeatCount='indefinite'/></circle><circle cx='400' cy='500' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='2.8s' repeatCount='indefinite'/></circle><circle cx='540' cy='560' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.0s' begin='0.6s' repeatCount='indefinite'/></circle><circle cx='180' cy='170' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.5s' begin='1.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.4s' begin='0.4s' repeatCount='indefinite'/></circle><circle cx='60' cy='380' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.2s' begin='2.4s' repeatCount='indefinite'/></circle><circle cx='320' cy='420' r='1.2'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='2.9s' repeatCount='indefinite'/></circle><circle cx='640' cy='200' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.5s' begin='3.9s' repeatCount='indefinite'/></circle><circle cx='520' cy='350' r='1.2'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.1s' begin='2.2s' repeatCount='indefinite'/></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.5s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.9000000000000001'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='2.8s' begin='0.2s' repeatCount='indefinite'/></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.5s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.9000000000000001'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='2.8s' begin='0.2s' repeatCount='indefinite'/></circle></g></svg>");
   background-size: 600px 600px;
   animation: ft-gold-dust-rise 30s linear infinite;
@@ -176,7 +176,7 @@ html body .qDHVXG_root {
   to { background-position: 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html body .qDHVXG_root { animation: none; }
+  html body .bhn1Oq_root { animation: none; }
 }
 
 /* ---------- 工作区选中项目：金色边框替代底色高亮 ---------- */
@@ -258,10 +258,10 @@ html body .SVAs4q_label:hover {
 }
 
 /* ---------- 右上角「Session log」：金色 ---------- */
-html body .nL4_yW_sessionLogButton {
+html body .nL4_yW_moreButton {
   color: #e6b95a !important;
 }
-html body .nL4_yW_sessionLogButton:hover {
+html body .nL4_yW_moreButton:hover {
   color: #f0c878 !important;
 }
 
@@ -271,16 +271,16 @@ html body .wSkVaW_titleCluster {
 }
 
 /* ---------- 对话列与输入卡片铺满主区宽度 ---------- */
-html body .Md3f7G_column,
+html body .EvIC1a_column,
 html body .uV2eYG_card {
   max-width: none !important;
 }
-html body .gdEzaW_userStack {
+html body .Sixlwa_userStack {
   max-width: min(720px, 90%) !important;
 }
 
 /* ---------- 消息与输入区左右留出头像通道（44px），防裁切 ---------- */
-html body .Md3f7G_column,
+html body .EvIC1a_column,
 html body .uV2eYG_card {
   box-sizing: border-box !important;
   padding-left: 44px !important;
@@ -288,13 +288,13 @@ html body .uV2eYG_card {
 }
 
 /* 消息行作为头像的定位基准（CSS 持久，重渲染不丢） */
-html body .gdEzaW_userRow,
-html body .Sxvs8a_root {
+html body .Sixlwa_userRow,
+html body .hWmORq_root {
   position: relative !important;
 }
 
 /* ---------- 用户气泡：尊贵小金边 ---------- */
-html body .gdEzaW_bubble {
+html body .Sixlwa_bubble {
   box-shadow: inset 0 0 0 1px rgba(217, 164, 65, .6) !important;
 }
 
@@ -346,8 +346,8 @@ html body ::-webkit-scrollbar-track {
 }
 
 /* 底部会话统计栏：取消宽度上限，避免右侧信息被截断 */
-html body .FJxK0a_root,
-html body[data-ds-dark-theme] .FJxK0a_root {
+html body .bOPqQW_root,
+html body[data-ds-dark-theme] .bOPqQW_root {
   max-width: none !important;
   width: 100% !important;
   padding: 4px 24px 0 !important;
@@ -357,8 +357,8 @@ html body[data-ds-dark-theme] .FJxK0a_root {
 
 /* ===== 权限弹窗毛玻璃 ===== */
 /* 等待审批卡：加背景模糊，底下内容不再干扰阅读 */
-html body .bqrRRG_card,
-html body[data-ds-dark-theme] .bqrRRG_card {
+html body .mna1RW_card,
+html body[data-ds-dark-theme] .mna1RW_card {
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
   backdrop-filter: blur(18px) saturate(1.15);
 }
@@ -440,4 +440,76 @@ html body[data-ds-dark-theme] .wSkVaW_composerSeat {
 html body .wSkVaW_root,
 html body[data-ds-dark-theme] .wSkVaW_root {
   min-height: 100vh !important;
+}
+
+/* 品牌区：字标保留（不再隐藏），但去掉一切「框」 */
+/* ============================================================
+   左上角品牌区：去框 · 单色强调（DeepSeek Harness）
+   ------------------------------------------------------------
+   挂钩 dsh 侧栏品牌区（CSS-Module 类名前缀 hHd-Xa_ ，0.1.5 实测有效）。
+   同时用 [class$="_xxx"] 兜底，避免下次升级改哈希前缀后整段失挂。
+
+   为什么不包边：品牌区正下方就是「新会话」胶囊按钮，同款 1px 描边 +
+   同款全圆角叠在一起，品牌铭牌会被读成「第二个按钮」——两个一模一样的
+   胶囊对撞，是这版最显廉价的来源。所以改为「不加框，靠颜色立辨识度」：
+     鲸鱼标识     = 皮肤强调色
+     deepseek 字标 = 皮肤强调色（与鲸鱼同一色系，收成一体）
+     HARNESS 小牌  = 强调色实底 + 墨色字母（唯一的高对比焦点）
+   靠这处实底小牌的明暗反差立住「高级」，而不是靠外圈描边。
+   色值全部走皮肤变量 / 每套皮肤单独调过对比度，切皮肤即时跟随。
+   ============================================================ */
+html body .hHd-Xa_logoRow .hHd-Xa_brand,
+html body [class$="_logoRow"] [class$="_brand"] {
+  overflow: visible !important;
+}
+html body .hHd-Xa_logoRow .hHd-Xa_brandIdentity,
+html body [class$="_logoRow"] [class$="_brandIdentity"] {
+  height: auto !important;
+  gap: 10px !important;
+}
+
+/* 小鲸鱼：主形锐利，只留一层贴身的色晕（不要糊开的雾） */
+html body .hHd-Xa_logoRow .hHd-Xa_brandMark,
+html body [class$="_logoRow"] [class$="_brandMark"] {
+  color: var(--ft-accent) !important;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45)) drop-shadow(0 0 5px rgba(217, 164, 65, .30));
+  transition: filter .22s ease, transform .22s ease;
+}
+
+/* 字标本体：无边框 / 无底色 / 无内阴影，纯字形 —— 整条染成强调色 */
+html body .hHd-Xa_logoRow .hHd-Xa_brandName,
+html body [class$="_logoRow"] [class$="_brandName"] {
+  position: relative;
+  box-sizing: border-box;
+  flex: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  width: max-content !important;
+  min-width: max-content !important;
+  height: 26px !important;
+  padding: 0 !important;
+  margin: 0;
+  border: 0 none !important;
+  border-radius: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  /* SVG 内部是双色：字母与牌底 = currentColor，牌内字母 = --dsw-alias-label-primary-inverted。
+     皮肤把该变量调浅/调深时牌内字母会糊成一片，这里在品牌作用域内重新配成墨色，
+     保证「强调色实底 + 墨色字母」永远清晰。 */
+  --dsw-alias-label-primary-inverted: #1b2233;
+  color: var(--ft-accent) !important;
+  -webkit-font-smoothing: antialiased;
+  transition: color .2s ease, filter .2s ease;
+}
+
+/* 悬停：只提亮 + 一圈更紧的色晕，依旧不出现任何框（可点区域＝品牌区，点击新建会话） */
+html body .hHd-Xa_logoRow .hHd-Xa_brand:hover .hHd-Xa_brandName,
+html body [class$="_logoRow"] [class$="_brand"]:hover [class$="_brandName"] {
+  color: var(--ft-accent-strong) !important;
+  filter: drop-shadow(0 0 9px rgba(217, 164, 65, .45));
+}
+html body .hHd-Xa_logoRow .hHd-Xa_brand:hover .hHd-Xa_brandMark,
+html body [class$="_logoRow"] [class$="_brand"]:hover [class$="_brandMark"] {
+  transform: translateY(-.5px);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45)) drop-shadow(0 0 10px rgba(217, 164, 65, .45));
 }

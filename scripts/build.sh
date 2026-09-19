@@ -20,6 +20,7 @@ swiftc -O -o "$APP/Contents/MacOS/$APP_NAME" "$SRC"
 cp "$RES/skin.css" "$APP/Contents/Resources/"
 cp "$RES/skin-emerald-light.css" "$APP/Contents/Resources/"
 cp "$RES/skin-scarlet.css" "$APP/Contents/Resources/"
+cp "$RES/alive.js" "$APP/Contents/Resources/"
 if [ -f "$RES/AppIcon.icns" ]; then
   cp "$RES/AppIcon.icns" "$APP/Contents/Resources/"
 fi

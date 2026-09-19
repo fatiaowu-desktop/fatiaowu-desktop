@@ -1,6 +1,7 @@
 // 发条屋 - DeepSeek Harness 原生独立窗口
 // 用系统 WebKit 渲染，不依赖任何浏览器；服务未就绪时自动重连
 import Cocoa
+import CryptoKit
 import WebKit
 
 // 内置浏览器「用默认浏览器打开」按钮（带回调的轻量子类）
@@ -68,9 +69,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
 
         let config = WKWebViewConfiguration()
+        // 生灵层要用 Web Audio 程序化合成机械音效：放开自动播放限制（否则 AudioContext 永远 suspended）
+        config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.add(self, name: "fatiaowuSetSkin")
         if let skin = AppDelegate.skinUserScript(css: skins[themeIndex], initialDark: themeIndex == 0) {
             config.userContentController.addUserScript(skin)
+        }
+        // 生灵层：发条机芯 + 小鲸鱼桌宠（独立脚本，见 resources/alive.js）
+        if let alive = AppDelegate.aliveUserScript() {
+            config.userContentController.addUserScript(alive)
         }
         webView = WKWebView(frame: rect, configuration: config)
         webView.navigationDelegate = self
@@ -94,8 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        loadURL()
-        startBalanceMonitor()
+        // 先自签 dsh web 鉴权 cookie（secret 持久化在 credentials 里，跨服务重启有效），
+        // 写入 WKWebView 后再加载页面，避免服务重启后撞上「authentication required」门页
+        seedAuthThenLoad()
 
         // WKWebView 全屏切换/窗口尺寸变化后偶发陈旧渲染：强制重绘
         NotificationCenter.default.addObserver(self, selector: #selector(forceRepaint(_:)), name: NSWindow.didEnterFullScreenNotification, object: window)
@@ -103,6 +111,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NotificationCenter.default.addObserver(self, selector: #selector(forceRepaint(_:)), name: NSWindow.didResizeNotification, object: window)
 
 
+    }
+
+    // ---------- dsh web 鉴权自签 ----------
+
+    // base64url（无填充），与 dsh 服务端 encodeBase64Url 一致
+    private static func b64url(_ data: Data) -> String {
+        var s = data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+        while s.hasSuffix("=") { s.removeLast() }
+        return s
+    }
+
+    // 从 ~/.dsh/.credentials.yaml 读取 client-connection/browser-session 的持久化 secret
+    private static func browserAuthSecret() -> Data? {
+        guard let content = try? String(contentsOfFile: "/Users/yangliu/.dsh/.credentials.yaml", encoding: .utf8) else {
+            return nil
+        }
+        var secretB64: String?
+        var inBlock = false
+        for line in content.split(separator: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("client-connection/browser-session:") { inBlock = true; continue }
+            if inBlock {
+                if t.hasPrefix("secret:") {
+                    secretB64 = t.dropFirst("secret:".count).trimmingCharacters(in: .whitespaces)
+                    break
+                }
+                // 进入下一个顶层记录则中止
+                if !t.hasPrefix("#"), !t.isEmpty, t.contains(":"), !t.hasPrefix("kind:"), !t.hasPrefix("payload:"), !t.hasPrefix("version:") {
+                    break
+                }
+            }
+        }
+        guard var b64 = secretB64 else { return nil }
+        b64 = b64.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let secret = Data(base64Encoded: b64), secret.count == 32 else { return nil }
+        return secret
+    }
+
+    // 复刻 dsh-client-connection 的 cookie 算法：
+    // name = "dsh-auth-" + b64url(sha256(authority))
+    // value = "v1." + b64url(JSON) + "." + b64url(hmac-sha256(secret, body))
+    private static func browserAuthCookie() -> HTTPCookie? {
+        guard let secret = browserAuthSecret() else { return nil }
+        let authority = "127.0.0.1:3080"
+        let name = "dsh-auth-" + b64url(Data(SHA256.hash(data: Data(authority.utf8))))
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let expires = now + 30 * 24 * 3600 * 1000 // 30 天，与服务端 maxAgeDays 一致
+        let payload = "{\"version\":1,\"authority\":\"\(authority)\",\"issuedAt\":\(now),\"expiresAt\":\(expires)}"
+        let body = b64url(Data(payload.utf8))
+        let sig = b64url(Data(HMAC<SHA256>.authenticationCode(for: Data(body.utf8), using: SymmetricKey(data: secret))))
+        let value = "v1.\(body).\(sig)"
+        return HTTPCookie(properties: [
+            .name: name,
+            .value: value,
+            .domain: "127.0.0.1",
+            .path: "/",
+            .expires: Date(timeIntervalSinceNow: 30 * 24 * 3600),
+        ])
+    }
+
+    private func seedAuthThenLoad() {
+        if let cookie = AppDelegate.browserAuthCookie() {
+            WKWebsiteDataStore.default().httpCookieStore.setCookie(cookie) { [weak self] in
+                guard let self = self else { return }
+                AppDelegate.log("自签鉴权 cookie 已写入，加载页面")
+                self.loadURL()
+                self.startBalanceMonitor()
+            }
+        } else {
+            AppDelegate.log("警告：自签鉴权 cookie 失败（secret 缺失或格式不符），直接加载页面")
+            loadURL()
+            startBalanceMonitor()
+        }
     }
 
     // ---------- 余额/消费监控 ----------
@@ -270,10 +354,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
         appItem.submenu = appMenu
+
+        // 编辑菜单：没有它，⌘C/⌘V/⌘X/⌘A 不会进响应链，WKWebView 收不到 copy:/paste:，
+        // 整个界面（选中文字、输入框粘贴）都会失效。
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: Selector(("cut:")), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: Selector(("copy:")), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: Selector(("paste:")), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editItem.submenu = editMenu
+
         NSApp.mainMenu = mainMenu
+        let menus = mainMenu.items.compactMap { $0.submenu?.title }.joined(separator: "/")
+        let editItems = (editItem.submenu?.items ?? [])
+            .filter { !$0.isSeparatorItem }
+            .map { "\($0.title)⌘\($0.keyEquivalent)" }
+            .joined(separator: " ")
+        AppDelegate.log("菜单自检: [\(menus)] 编辑菜单项: \(editItems)")
     }
 
     // 读取内置皮肤 CSS，生成注入脚本（在页面最早期注入，避免闪烁）
+    // 生灵层脚本：从 bundle 读 resources/alive.js 直接注入（atDocumentEnd，此时 DOM 已就绪）
+    private static func aliveUserScript() -> WKUserScript? {
+        guard let path = Bundle.main.path(forResource: "alive", ofType: "js"),
+              let js = try? String(contentsOfFile: path, encoding: .utf8),
+              !js.isEmpty else {
+            log("生灵层加载失败：alive.js 未找到或为空")
+            return nil
+        }
+        log("生灵层加载成功：\(js.count) 字符")
+        return WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+    }
+
     private static func skinUserScript(css: String, initialDark: Bool) -> WKUserScript? {
         guard !css.isEmpty else {
             log("皮肤加载失败：CSS 为空")
@@ -281,7 +399,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         log("皮肤加载成功：\(css.count) 字符")
         let cssLiteral = jsStringLiteral(css)
-        // 加载用户头像 PNG（发条屋.png 96px）→ data URI
+        // 加载用户头像蒙版 PNG（FTW logo，形状在 alpha 通道）→ data URI，渲染时用 --ft-accent 着色
         var userAvatarURI = ""
         if let pngPath = Bundle.main.path(forResource: "user-avatar", ofType: "png"),
            let data = try? Data(contentsOf: URL(fileURLWithPath: pngPath)) {
@@ -394,10 +512,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
           if (document.body) { ensureCenterMark(); }
           else { document.addEventListener('DOMContentLoaded', ensureCenterMark); }
 
-          // ===== 双方头像：我=金色小鲸鱼，你=发条屋金边 =====
+          // ===== 双方头像：我=皮肤色 FTW 立方体（蒙版着色，换肤自动变色），你=小鲸鱼 =====
           var WHALE_PATH = "M22.9168 1.43018C22.6713 1.31018 22.5658 1.53918 22.4223 1.65519C22.3733 1.69269 22.3318 1.74169 22.2903 1.78669C21.9317 2.1697 21.5127 2.42121 20.9657 2.39121C20.1657 2.34621 19.4827 2.59771 18.8787 3.20973C18.7502 2.45521 18.3236 2.0047 17.6746 1.71569C17.3351 1.56568 16.9916 1.41518 16.7536 1.08867C16.5876 0.856163 16.5421 0.597155 16.4591 0.341647C16.4061 0.187643 16.3536 0.0301382 16.1761 0.00363739C15.9836 -0.0263635 15.9081 0.135141 15.8326 0.270145C15.5306 0.822162 15.4136 1.43018 15.4251 2.0462C15.4516 3.43174 16.0366 4.53527 17.1991 5.3203C17.3311 5.4103 17.3651 5.5003 17.3236 5.63181C17.2441 5.90231 17.1501 6.16482 17.0671 6.43533C17.0141 6.60784 16.9351 6.64584 16.7501 6.57033C16.1121 6.30383 15.5611 5.90931 15.074 5.4328C14.2475 4.63328 13.5 3.75075 12.568 3.05973C12.349 2.89822 12.13 2.74822 11.9034 2.60522C10.9524 1.68169 12.028 0.923165 12.277 0.833162C12.5375 0.739159 12.3675 0.41615 11.5259 0.42015C10.6844 0.42365 9.91439 0.705658 8.93286 1.08117C8.78935 1.13767 8.63835 1.17867 8.48384 1.21267C7.59332 1.04367 6.66829 1.00617 5.70226 1.11517C3.88321 1.31768 2.43016 2.1777 1.36213 3.64575C0.0790928 5.4103 -0.222916 7.41536 0.146595 9.50642C0.535106 11.7105 1.66014 13.535 3.38869 14.9616C5.18125 16.4406 7.24581 17.1657 9.60138 17.0266C11.0319 16.9441 12.6245 16.7526 14.421 15.2321C14.874 15.4576 15.3496 15.5476 16.1381 15.6151C16.7456 15.6716 17.3306 15.5851 17.7836 15.4911C18.4931 15.3411 18.4441 14.6841 18.1876 14.5636C16.1081 13.595 16.5646 13.9891 16.1496 13.67C17.2061 12.42 18.8202 10.1979 19.3182 7.17235C19.3672 6.83834 19.4297 6.36783 19.4222 6.09732C19.4182 5.93231 19.4562 5.86831 19.6447 5.84931C20.1657 5.78931 20.6712 5.64681 21.1357 5.3913C22.4833 4.65528 23.0268 3.44624 23.1548 1.9972C23.1738 1.77569 23.1508 1.54668 22.9168 1.43018ZM11.1749 14.4736C9.15936 12.889 8.18184 12.3675 7.77832 12.39C7.40081 12.4125 7.46881 12.8445 7.55182 13.126C7.63882 13.404 7.75182 13.5955 7.91033 13.8396C8.01983 14.0011 8.09533 14.2411 7.80083 14.4216C7.15181 14.8231 6.02327 14.2866 5.97027 14.2601C4.65673 13.4865 3.5587 12.4655 2.78467 11.069C2.03715 9.72493 1.60314 8.28289 1.53164 6.74384C1.51264 6.37233 1.62214 6.24082 1.99215 6.17332C2.47916 6.08332 2.98118 6.06432 3.46769 6.13582C5.52476 6.43633 7.27581 7.35586 8.74385 8.8129C9.58188 9.64243 10.2159 10.634 10.8689 11.6025C11.5634 12.631 12.3105 13.611 13.262 14.4146C13.598 14.6961 13.866 14.9101 14.1225 15.0681C13.349 15.1546 12.058 15.1731 11.1749 14.4746ZM12.141 8.25988C12.141 8.09488 12.273 7.96338 12.439 7.96338C12.4765 7.96338 12.5105 7.97088 12.541 7.98188C12.5825 7.99688 12.6205 8.01938 12.6505 8.05338C12.7035 8.10588 12.7335 8.18088 12.7335 8.25988C12.7335 8.42489 12.6015 8.55639 12.4355 8.55639C12.2695 8.55639 12.141 8.42489 12.141 8.25988ZM15.1415 9.79893C14.949 9.87793 14.7565 9.94544 14.5715 9.95294C14.2845 9.96794 13.9715 9.85143 13.8015 9.70893C13.5375 9.48742 13.3485 9.36342 13.2695 8.97691C13.2355 8.8119 13.2545 8.55639 13.2845 8.40989C13.3525 8.09438 13.277 7.89187 13.0545 7.70787C12.8735 7.55786 12.643 7.51636 12.39 7.51636C12.2955 7.51636 12.209 7.47486 12.1445 7.44136C12.039 7.38886 11.9519 7.25735 12.035 7.09585C12.0615 7.04335 12.19 6.91584 12.22 6.89334C12.5635 6.69784 12.9595 6.76184 13.326 6.90834C13.6655 7.04735 13.9225 7.30236 14.292 7.66287C14.6695 8.09838 14.7375 8.21838 14.9525 8.54539C15.1225 8.8009 15.277 9.06341 15.3831 9.36392C15.4471 9.55142 15.3641 9.70493 15.1415 9.79893Z";
           function addAvatars() {
-            var urows = document.querySelectorAll('.gdEzaW_userRow:not([data-ftav])');
+            var urows = document.querySelectorAll('.Sixlwa_userRow:not([data-ftav])');
             for (var i = 0; i < urows.length; i++) {
               var row = urows[i];
               row.setAttribute('data-ftav', '1');
@@ -405,10 +523,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
               row.style.position = 'relative';
               var av = document.createElement('div');
               av.className = 'ft-av-user';
-              av.style.cssText = 'position:absolute;right:-60px;top:4px;width:32px;height:32px;border-radius:8px;border:1px solid var(--ft-accent-soft);background:url(' + USER_AV + ') center/cover no-repeat;box-shadow:0 0 6px var(--ft-accent-bg);';
+              av.style.cssText = 'position:absolute;right:-60px;top:4px;width:32px;height:32px;border-radius:8px;border:1px solid var(--ft-accent-soft);background:var(--ft-accent-bg);box-shadow:0 0 6px var(--ft-accent-bg);';
+              // 蒙版铺满整格（mask-size:100%），留白由蒙版本体控制（见 scripts/make-avatar-mask.py）：
+              // 旧版 `center/76%` 把「外圈描边+间隙」一起缩进来，32px 下只有 0.6px，糊成一团。
+              av.innerHTML = '<div style="width:100%;height:100%;border-radius:inherit;background:var(--ft-accent);-webkit-mask:url(' + USER_AV + ') center/100% 100% no-repeat;mask:url(' + USER_AV + ') center/100% 100% no-repeat;"></div>';
               row.appendChild(av);
             }
-            var arows = document.querySelectorAll('.Sxvs8a_root:not([data-ftav])');
+            var arows = document.querySelectorAll('.hWmORq_root:not([data-ftav])');
             for (var j = 0; j < arows.length; j++) {
               var arow = arows[j];
               arow.setAttribute('data-ftav', '1');
@@ -422,7 +543,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
           }
           function watchAvatars() {
             addAvatars();
-            var root = document.querySelector('.Md3f7G_scroll') || document.body;
+            var root = document.querySelector('.EvIC1a_scroll') || document.body;
             if (window.MutationObserver) {
               new MutationObserver(function () { addAvatars(); }).observe(root, { childList: true, subtree: true });
             }
@@ -689,6 +810,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // 页面加载后自动检查皮肤是否生效，写入日志
     private func diagnoseSkin() {
+        // 生灵层自检：/tmp/ft-alive.flag 内容为 idle|busy，强制到该状态后全窗截图 + 机芯特写
+        if FileManager.default.fileExists(atPath: "/tmp/ft-alive.flag") {
+            let raw = (try? String(contentsOfFile: "/tmp/ft-alive.flag", encoding: .utf8)) ?? ""
+            let mode = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                self?.probeAlive(force: mode.isEmpty ? "idle" : mode)
+            }
+        }
+        if FileManager.default.fileExists(atPath: "/tmp/ft-snapshot.flag") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                self?.captureSnapshot()
+            }
+        }
         webView.evaluateJavaScript("""
         JSON.stringify({
           style: !!document.getElementById('fatiaowu-skin'),
@@ -697,7 +831,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
           brand: getComputedStyle(document.body).getPropertyValue('--dsw-alias-brand-primary'),
           bubble: getComputedStyle(document.body).getPropertyValue('--dsw-specific-bubble'),
           side: getComputedStyle(document.body).getPropertyValue('--dsw-specific-sidebar-fill'),
-          art: getComputedStyle(document.body).backgroundImage !== 'none'
+          art: getComputedStyle(document.body).backgroundImage !== 'none',
+          title: document.title,
+          bodyEls: document.body ? document.body.getElementsByTagName('*').length : -1
         })
         """) { result, _ in
             if let r = result as? String {
@@ -711,6 +847,695 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 if let r = result as? String {
                     AppDelegate.log("状态条: \(r)")
                 }
+            }
+        }
+        // 2.5 秒后检查左上角品牌区（无框方案：border 应为 0px、字标应为强调色、牌内字母应为墨色），换 dsh 版本后靠它快速回归
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            guard let self = self, let wv = self.webView else { return }
+            wv.evaluateJavaScript("""
+            (function () {
+              function box(sel) {
+                var el = document.querySelector(sel);
+                if (!el) return sel + '=缺失';
+                var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                return sel + '=' + Math.round(r.width) + 'x' + Math.round(r.height) + '@' + Math.round(r.left) + ',' + Math.round(r.top)
+                  + ' ' + cs.display
+                  + ' border:' + cs.borderTopWidth + '/' + cs.borderTopStyle
+                  + ' bg:' + cs.backgroundImage.slice(0, 12)
+                  + ' color:' + cs.color;
+              }
+              var bn = document.querySelector('[class*="brandName"]');
+              return JSON.stringify({
+                collapsed: !!document.querySelector('[data-sidebar-collapsed]'),
+                wordmark: document.querySelectorAll('svg[viewBox^="26 0 156"]').length,
+                name: box('[class*="brandName"]'),
+                mark: box('[class*="brandMark"]'),
+                badgeInk: bn ? getComputedStyle(bn).getPropertyValue('--dsw-alias-label-primary-inverted').trim() : ''
+              });
+            })()
+            """) { result, _ in
+                if let r = result as? String { AppDelegate.log("品牌探针: \(r)") }
+            }
+        }
+
+        // 10 秒后检查头像挂载数量（需要会话里有消息才会出现行元素）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self = self, let wv = self.webView else { return }
+            wv.evaluateJavaScript("""
+            JSON.stringify({
+              userRows: document.querySelectorAll('.Sixlwa_userRow').length,
+              userAv: document.querySelectorAll('.ft-av-user').length,
+              asstAv: document.querySelectorAll('.ft-av-asst').length,
+              maskPainted: (function(){ var el = document.querySelector('.ft-av-user div'); return el ? getComputedStyle(el).backgroundColor : 'n/a'; })()
+            })
+            """) { result, _ in
+                if let r = result as? String {
+                    AppDelegate.log("头像探针: \(r)")
+                }
+            }
+        }
+    }
+
+    // 生灵层自检：强制运转状态 → 采两次状态（间隔 1s，比较齿轮角度证明真的在转）→ 全窗图 + 机芯特写
+    private func probeAlive(force: String) {
+        guard let wv = webView else { return }
+
+        // settings 模式：先点开设置面板，验证「生灵」栏目是否插进去了
+        if force == "settings" {
+            wv.evaluateJavaScript("""
+            (function(){
+              var area = document.querySelector('[class$="_settingsArea"]');
+              if (!area) return 'no-settingsArea';
+              var b = area.querySelector('button,[role="button"]');
+              if (!b) return 'no-button';
+              b.click();
+              return 'clicked';
+            })()
+            """) { r, _ in
+                AppDelegate.log("生灵探针[settings]: 打开设置 -> \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript("""
+                (function(){
+                  var s = document.getElementById('ft-alive-section');
+                  var secs = document.querySelectorAll('[class$="_content"] [class*="_section"]');
+                  return JSON.stringify({ alive: !!s, sections: secs.length,
+                    skin: !!document.getElementById('ft-skin-section'),
+                    toggles: s ? s.querySelectorAll('button').length : 0,
+                    label: s ? s.textContent.replace(/\\s+/g,' ').slice(0,80) : null });
+                })()
+                """) { r, _ in
+                    AppDelegate.log("生灵探针[settings] 栏目: \(r as? String ?? "nil")")
+                }
+                let c = WKSnapshotConfiguration()
+                c.snapshotWidth = 1180
+                self.writeSnapshot(wv, c, to: "/tmp/ft-alive-settings.png", label: "设置面板")
+            }
+            return
+        }
+
+        // tok 模式：核对真实 token 遥测（dsh 统计胶囊 aria-label + 传输层账本）
+        if force == "tok" {
+            let dump = "window.__ftAliveDebug ? JSON.stringify({pill: window.__ftAliveDebug.pill(), tele: window.__ftAliveDebug.state().tele, text: window.__ftAliveDebug.state().text, title: window.__ftAliveDebug.state().title}) : 'no-alive'"
+            wv.evaluateJavaScript(dump) { r, _ in
+                AppDelegate.log("用量探针: \(r as? String ?? "nil")")
+            }
+            // 真实会话可能还没有统计胶囊（新会话 steps=0 时不渲染）——注入同结构的假胶囊验证解析链路
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript("""
+                (function(){
+                  var real = document.querySelector('[data-composer-stats]');
+                  if (real) return 'real-pill-present';
+                  var d = document.createElement('div');
+                  d.setAttribute('data-composer-stats', '1');
+                  d.style.cssText = 'position:fixed;left:-9999px;top:0;';
+                  var a = document.createElement('button');
+                  a.setAttribute('aria-label', '24.6k tok · 缓存命中 92%');
+                  var b = document.createElement('button');
+                  b.setAttribute('aria-label', '3 轮 12 步 · 38 tok/s');
+                  d.appendChild(a); d.appendChild(b);
+                  document.body.appendChild(d);
+                  return 'fake-pill-injected';
+                })()
+                """) { r, _ in
+                    AppDelegate.log("用量探针: \(r as? String ?? "nil")")
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript(dump) { r, _ in
+                    AppDelegate.log("用量探针[注入后]: \(r as? String ?? "nil")")
+                }
+                wv.evaluateJavaScript("""
+                (function(){var e=document.getElementById('ft-clock');if(!e)return null;var r=e.getBoundingClientRect();
+                return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height});})()
+                """) { res, _ in
+                    guard let s = res as? String,
+                          let d = s.data(using: .utf8),
+                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let x = o["x"] as? Double, let y = o["y"] as? Double,
+                          let w = o["w"] as? Double, let h = o["h"] as? Double else { return }
+                    let c = WKSnapshotConfiguration()
+                    c.rect = CGRect(x: max(0, x - 8), y: max(0, y - 8), width: w + 16, height: h + 16)
+                    c.snapshotWidth = NSNumber(value: Int((w + 16) * 6))
+                    self.writeSnapshot(wv, c, to: "/tmp/ft-clock-tok.png", label: "机芯读数")
+                }
+                wv.evaluateJavaScript("(function(){var d=document.querySelector('[data-composer-stats][style]');if(d)d.remove();return 'cleaned';})()") { _, _ in }
+            }
+            return
+        }
+
+        // liveflow 模式：走真实判据（注入假「停止生成」按钮）→ 灌合成用量 → 撤按钮触发完成，
+        // 端到端验证「实时速率 → 转速 → 本轮增量 → 上弦音」这条链路（不触碰真实会话）
+        if force == "liveflow" {
+            let dump = "window.__ftAliveDebug ? JSON.stringify(window.__ftAliveDebug.state()) : 'no-alive'"
+            func readState(_ tag: String) {
+                wv.evaluateJavaScript(dump) { r, _ in
+                    AppDelegate.log("实时用量链路[\(tag)]: \(r as? String ?? "nil")")
+                }
+            }
+            wv.evaluateJavaScript("""
+            (function(){
+              var b = document.createElement('button');
+              b.id = 'ft-fake-stop';
+              b.setAttribute('aria-label', '停止生成');
+              b.style.cssText = 'position:fixed;left:-9999px;top:0;';
+              document.body.appendChild(b);
+              return 'injected';
+            })()
+            """) { r, _ in
+                AppDelegate.log("实时用量链路: 注入假停止按钮 -> \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                wv.evaluateJavaScript("window.__ftAliveDebug && window.__ftAliveDebug.feed(5, 420)") { r, _ in
+                    AppDelegate.log("实时用量链路: 灌合成用量 -> \(r as? String ?? "nil")")
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { readState("t1 运转中") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { readState("t2 运转中") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.6) {
+                wv.evaluateJavaScript("(function(){var e=document.getElementById('ft-fake-stop');if(e)e.remove();return 'removed';})()") { _, _ in }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                readState("完成后(期望 done + 本轮增量)")
+                wv.evaluateJavaScript("""
+                (function(){var e=document.getElementById('ft-clock');if(!e)return null;var r=e.getBoundingClientRect();
+                return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height});})()
+                """) { res, _ in
+                    guard let s = res as? String,
+                          let d = s.data(using: .utf8),
+                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let x = o["x"] as? Double, let y = o["y"] as? Double,
+                          let w = o["w"] as? Double, let h = o["h"] as? Double else { return }
+                    let c = WKSnapshotConfiguration()
+                    c.rect = CGRect(x: max(0, x - 8), y: max(0, y - 8), width: w + 16, height: h + 16)
+                    c.snapshotWidth = NSNumber(value: Int((w + 16) * 6))
+                    self.writeSnapshot(wv, c, to: "/tmp/ft-clock-liveflow.png", label: "机芯读数[完成后]")
+                }
+            }
+            return
+        }
+
+        // setopen 模式：查清设置面板的真实打开方式，以及「生灵」栏目到底被插到了哪儿
+        if force == "setopen" {
+            let js = """
+            (function(){
+              function cn(el){var c=el.className;if(c&&typeof c.baseVal==='string')c=c.baseVal;return (c||'').toString();}
+              function desc(el){
+                if(!el) return 'null';
+                var r=el.getBoundingClientRect();
+                return el.tagName.toLowerCase()+'['+cn(el).slice(0,50)+'] '+(r.width>0?'可见 ':'隐藏 ')+Math.round(r.width)+'x'+Math.round(r.height);
+              }
+              var sec=document.getElementById('ft-alive-section');
+              function chain(el){
+                var out=[], n=el, d=0;
+                while(n && n!==document.body && d<8){
+                  var r=n.getBoundingClientRect();
+                  out.push(n.tagName.toLowerCase()+'['+cn(n).slice(0,44)+'] '+Math.round(r.width)+'x'+Math.round(r.height)+' pos:'+getComputedStyle(n).position);
+                  n=n.parentNode; d++;
+                }
+                return out;
+              }
+              var pan=document.querySelector('[class$="_panel"]');
+              var ovl=document.querySelector('[class$="_overlay"]');
+              var area=document.querySelector('[class$="_settingsArea"]');
+              var contacts=[];
+              var trs=document.querySelectorAll('[class$="_triggerRow"]');
+              for(var j=0;j<trs.length;j++){
+                contacts.push({chain: chain(trs[j]), hasPanel: !!trs[j].querySelector('[class$="_panel"]'), hasOverlay: !!trs[j].querySelector('[class$="_overlay"]')});
+              }
+              var contents=[];
+              var cs=document.querySelectorAll('[class$="_content"]');
+              for(var i=0;i<cs.length;i++){
+                var p=cs[i].parentNode;
+                contents.push({cls:cn(cs[i]).slice(0,60), w:Math.round(cs[i].getBoundingClientRect().width),
+                  h:Math.round(cs[i].getBoundingClientRect().height), parent:desc(p),
+                  hasAlive: !!cs[i].querySelector('#ft-alive-section'), hasSkin: !!cs[i].querySelector('#ft-skin-section')});
+              }
+              return JSON.stringify({
+                panelChain: pan ? chain(pan) : null,
+                overlayChain: ovl ? chain(ovl) : null,
+                areaChain: area ? chain(area) : null,
+                triggerRows: contacts,
+                overlayInArea: !!(area && ovl && area.contains(ovl)),
+                overlayInTriggerRow: !!(trs.length && ovl && trs[0].contains(ovl)),
+                aliveExists: !!sec,
+                aliveParent: sec? desc(sec.parentNode) : null,
+                aliveVisible: sec? (sec.offsetParent !== null) : null,
+                aliveRect: sec? (function(){var r=sec.getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)];})() : null,
+                // 「生灵」栏目里到底渲染了几行开关（文字直接读出来，不靠看图猜）
+                aliveRows: sec? (function(){
+                  var rs=sec.querySelectorAll('[class*="switchRow"],[class*="toggleRow"],[class*="row"]');
+                  var out=[];
+                  for(var i=0;i<rs.length;i++){
+                    var t=(rs[i].textContent||'').replace(/\\s+/g,' ').trim();
+                    if(t) out.push(t.slice(0,36));
+                  }
+                  return out;
+                })() : null,
+                aliveSwitches: sec? sec.querySelectorAll('[role="switch"],input[type="checkbox"],button[class*="switch"]').length : null,
+                contentCount: cs.length,
+                contents: contents.slice(0,6),
+                sectionsTotal: document.querySelectorAll('[id$="-section"]').length,
+                sectionIds: (function(){var a=[];var n=document.querySelectorAll('[id$="-section"]');for(var i=0;i<n.length;i++)a.push(n[i].id);return a;})()
+              });
+            })()
+            """
+            wv.evaluateJavaScript(js) { r, _ in
+                AppDelegate.log("设置面板探针[关闭态]: \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                // 点原生触发器（不是我的转发按钮）→ 看面板怎么出现
+                wv.evaluateJavaScript("(function(){var a=document.querySelector('[class$=\"_settingsArea\"]');if(!a)return 'no-area';var b=a.querySelector('button');if(!b)return 'no-btn';b.click();return 'clicked-real';})()") { r, _ in
+                    AppDelegate.log("设置面板探针: 点原生触发器 -> \(r as? String ?? "nil")")
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript(js) { r, _ in
+                    AppDelegate.log("设置面板探针[打开后]: \(r as? String ?? "nil")")
+                }
+                // 面板内容可滚动：找到真正的滚动容器并滚到底，把「生灵」三条都露出来
+                wv.evaluateJavaScript("""
+                (function(){
+                  var p=document.querySelector('[class$="_panel"]');
+                  if(!p) return 'no-panel';
+                  var best=null, bh=0;
+                  var ns=p.querySelectorAll('*');
+                  for(var i=0;i<ns.length;i++){
+                    var el=ns[i];
+                    if(el.scrollHeight - el.clientHeight > 30 && el.clientHeight > 180 && el.scrollHeight > bh){
+                      best=el; bh=el.scrollHeight;
+                    }
+                  }
+                  if(!best) return 'no-scroller';
+                  best.scrollTop = best.scrollHeight;
+                  return 'scrolled ' + Math.round(best.scrollTop) + '/' + Math.round(best.scrollHeight) + ' cls=' + String(best.className).slice(0,40);
+                })()
+                """) { r, _ in
+                    AppDelegate.log("设置面板探针: 滚动 -> \(r as? String ?? "nil")")
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript("""
+                (function(){var p=document.querySelector('[class$="_panel"]');if(!p)return null;var r=p.getBoundingClientRect();
+                return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height});})()
+                """) { res, _ in
+                    guard let s = res as? String,
+                          let d = s.data(using: .utf8),
+                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let x = o["x"] as? Double, let y = o["y"] as? Double,
+                          let w = o["w"] as? Double, let h = o["h"] as? Double else { return }
+                    let c = WKSnapshotConfiguration()
+                    c.rect = CGRect(x: max(0, x - 4), y: max(0, y - 4), width: w + 8, height: h + 8)
+                    c.snapshotWidth = NSNumber(value: Int(w + 8))
+                    self.writeSnapshot(wv, c, to: "/tmp/ft-set-alive.png", label: "设置面板[整块]")
+                }
+            }
+            return
+        }
+
+        // setloc 模式：核对「设置」入口已搬到主区标题栏，并验证点击转发真的能打开面板
+        if force == "setloc" {
+            let st1 = "window.__ftAliveDebug ? JSON.stringify({moved: window.__ftAliveDebug.state().settingsMoved, hidden: window.__ftAliveDebug.state().settingsHidden, btn: (function(){var b=document.getElementById('ft-settings-btn');if(!b)return null;var r=b.getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)];})(), icon: (function(){var b=document.getElementById('ft-settings-btn');return b?b.children.length:-1;})()}) : 'no-alive'"
+            wv.evaluateJavaScript(st1) { r, _ in
+                AppDelegate.log("设置入口探针: \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                let c = WKSnapshotConfiguration()
+                c.rect = CGRect(x: 1180, y: 0, width: 260, height: 84)
+                c.snapshotWidth = 1040
+                self.writeSnapshot(wv, c, to: "/tmp/ft-set-header.png", label: "标题栏右上")
+                wv.evaluateJavaScript("(function(){var b=document.getElementById('ft-settings-btn');if(b)b.click();return 'clicked';})()") { r, _ in
+                    AppDelegate.log("设置入口探针: 点击转发 -> \(r as? String ?? "nil")")
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                // 判据必须用「浮层是否真的有尺寸」——不能用 #ft-alive-section 是否存在
+                // （那个节点常驻，面板关着也在，上一轮就是被它骗过一次）
+                wv.evaluateJavaScript("""
+                (function(){
+                  function vis(el){ if(!el) return null; var r=el.getBoundingClientRect();
+                    return Math.round(r.width)+'x'+Math.round(r.height)+' disp:'+getComputedStyle(el).display; }
+                  var s  = document.getElementById('ft-alive-section');
+                  var ov = document.querySelector('[class$="_overlay"]');
+                  var pn = document.querySelector('[class$="_panel"]');
+                  var t  = document.querySelector('[class$="_settingsArea"] button');
+                  var b  = document.getElementById('ft-settings-btn');
+                  return JSON.stringify({
+                    overlay: vis(ov), panel: vis(pn),
+                    aliveInPanel: !!(pn && pn.querySelector('#ft-alive-section')),
+                    aliveVisible: s ? (s.offsetParent !== null) : null,
+                    triggerExpanded: t ? t.getAttribute('aria-expanded') : null,
+                    btnDataOn: b ? b.getAttribute('data-on') : null,
+                    sections: document.querySelectorAll('[class$="_content"] [id$="-section"]').length
+                  });
+                })()
+                """) { r, _ in
+                    AppDelegate.log("设置入口探针 打开后: \(r as? String ?? "nil")")
+                }
+                let c = WKSnapshotConfiguration()
+                c.snapshotWidth = 1180
+                self.writeSnapshot(wv, c, to: "/tmp/ft-set-panel.png", label: "设置面板")
+            }
+            return
+        }
+
+        // pet 模式：桌宠特写（真实截图，放大后目检造型与摆动）
+        if force == "pet" {
+            let petRectJS = """
+            (function(){
+              var p = document.getElementById('ft-pet');
+              if (!p) return null;
+              var r = p.getBoundingClientRect();
+              return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,
+                mode:(window.__ftAliveDebug?window.__ftAliveDebug.state().petMode:''),
+                eye:(window.__ftAliveDebug?window.__ftAliveDebug.state().petEye:'')});
+            })()
+            """
+            wv.evaluateJavaScript(petRectJS) { r, _ in
+                AppDelegate.log("桌宠探针: \(r as? String ?? "nil")")
+            }
+            wv.evaluateJavaScript("window.__ftAliveDebug ? JSON.stringify(window.__ftAliveDebug.state()) : 'no-alive'") { r, _ in
+                AppDelegate.log("生灵探针[pet] state: \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript(petRectJS) { res, _ in
+                    let full = WKSnapshotConfiguration()
+                    full.snapshotWidth = 1180
+                    self.writeSnapshot(wv, full, to: "/tmp/ft-pet-full.png", label: "全窗[pet]")
+                    guard let s = res as? String,
+                          let d = s.data(using: .utf8),
+                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let x = o["x"] as? Double, let y = o["y"] as? Double,
+                          let w = o["w"] as? Double, let h = o["h"] as? Double, w > 4 else {
+                        AppDelegate.log("桌宠探针: 拿不到几何")
+                        return
+                    }
+                    AppDelegate.log("桌宠探针 几何: \(Int(w))x\(Int(h))@\(Int(x)),\(Int(y)) mode=\(o["mode"] ?? "") eye=\(o["eye"] ?? "")")
+                    let pad = 18.0
+                    let c = WKSnapshotConfiguration()
+                    c.rect = CGRect(x: max(0, x - pad), y: max(0, y - pad), width: w + pad * 2, height: h + pad * 2)
+                    c.snapshotWidth = NSNumber(value: Int((w + pad * 2) * 8))
+                    self.writeSnapshot(wv, c, to: "/tmp/ft-pet-zoom.png", label: "桌宠特写")
+                }
+            }
+            return
+        }
+
+        // petact 模式：把每个新行为依次拉一遍并逐个截图（只验「特效落点/活动范围」，
+        // 手感与好不好看交给用户实测）。截图区固定为「侧栏 + 正文左缘 360px」。
+        if force == "petact" {
+            let acts: [(String, Double)] = [("stretch", 0.5), ("spout", 0.35), ("chase", 1.2),
+                                            ("peek", 2.7), ("spin", 0.3), ("visitClock", 3.6)]
+            var delay = 0.4
+            for (m, shot) in acts {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self = self, let wv = self.webView else { return }
+                    wv.evaluateJavaScript("window.__ftAliveDebug && window.__ftAliveDebug.play('\(m)')") { _, _ in }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay + shot) { [weak self] in
+                    guard let self = self, let wv = self.webView else { return }
+                    let c = WKSnapshotConfiguration()
+                    c.rect = CGRect(x: 0, y: 60, width: 360, height: 880)
+                    c.snapshotWidth = 1080
+                    self.writeSnapshot(wv, c, to: "/tmp/ft-act-\(m).png", label: "行为[\(m)]")
+                    wv.evaluateJavaScript("""
+                    (function(){var d=window.__ftAliveDebug;if(!d)return null;var s=d.state();
+                    return JSON.stringify({mode:s.petMode,play:s.petPlay,pos:s.petPos,jelly:s.petJelly,
+                    bubs:s.petBubs,scale:s.petScale,home:s.petHome});})()
+                    """) { r, _ in
+                        AppDelegate.log("行为探针[\(m)]: \(r as? String ?? "nil")")
+                    }
+                }
+                delay += shot + 0.6
+            }
+            // 最后来一次「完成庆祝」（三连跳 + 星光 + 泡泡 + 和弦）
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.2) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                wv.evaluateJavaScript("window.__ftAliveDebug && window.__ftAliveDebug.cheer()") { _, _ in }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.5) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                let c = WKSnapshotConfiguration()
+                c.rect = CGRect(x: 0, y: 60, width: 360, height: 880)
+                c.snapshotWidth = 1080
+                self.writeSnapshot(wv, c, to: "/tmp/ft-act-cheer.png", label: "行为[cheer]")
+            }
+            return
+        }
+
+        // dom 模式：把侧栏底部/品牌区/主区头部的真实结构 dump 出来（决定「设置」往哪挪）
+        if force == "dom" {
+            wv.evaluateJavaScript("""
+            (function(){
+              function cn(el){
+                var c = el.className;
+                if (c && typeof c.baseVal === 'string') c = c.baseVal;
+                return (c || '').toString();
+              }
+              function d(el){
+                var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+                return {
+                  t: el.tagName.toLowerCase(),
+                  c: cn(el).split(/\\s+/).filter(function(x){return x.indexOf('_')>-1;}).join(' ').slice(0,60),
+                  a: (el.getAttribute('aria-label') || el.getAttribute('title') || '').slice(0,24),
+                  x: (el.textContent||'').replace(/\\s+/g,' ').trim().slice(0,24),
+                  r: [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)]
+                };
+              }
+              function walk(el, depth, budget){
+                if (!el || depth < 0 || budget.n <= 0) return null;
+                budget.n--;
+                var o = d(el);
+                if (depth > 0) {
+                  var kids = [];
+                  for (var i = 0; i < el.children.length && i < 14; i++) {
+                    var k = walk(el.children[i], depth-1, budget);
+                    if (k) kids.push(k);
+                  }
+                  if (kids.length) o.k = kids;
+                }
+                return o;
+              }
+              var roots = {
+                sideRoot: '[class$="_root"][class*="_hHd"]',
+                logoRow: '[class$="_logoRow"]',
+                footArea: '[class$="_footArea"]',
+                settingsArea: '[class$="_settingsArea"]',
+                footerActions: '[class$="_footerActions"]',
+                regionArea: '[class$="_regionArea"]',
+                mainHeader: '[class$="_header"]'
+              };
+              var out = {};
+              for (var key in roots) {
+                var el = document.querySelector(roots[key]);
+                out[key] = el ? walk(el, 3, {n: 40}) : '缺失';
+              }
+              // 侧栏底部 260px 内出现的所有可点元素
+              var bottom = [];
+              var sb = document.querySelector('[class$="_root"][class*="_hHd"]');
+              if (sb) {
+                var br = sb.getBoundingClientRect();
+                var all = sb.querySelectorAll('button,[role="button"],a');
+                for (var i = 0; i < all.length; i++) {
+                  var r = all[i].getBoundingClientRect();
+                  if (r.top > br.bottom - 280 && r.width > 0) {
+                    bottom.push({a: (all[i].getAttribute('aria-label')||all[i].getAttribute('title')||'').slice(0,20),
+                                 x: (all[i].textContent||'').replace(/\\s+/g,' ').trim().slice(0,20),
+                                 r: [Math.round(r.left),Math.round(r.top),Math.round(r.width),Math.round(r.height)]});
+                  }
+                }
+              }
+              out.sidebarBottomButtons = bottom;
+              return JSON.stringify(out);
+            })()
+            """) { r, _ in
+                if let s = r as? String {
+                    AppDelegate.log("DOM探针:\n\(s)")
+                } else {
+                    AppDelegate.log("DOM探针: 无结果 \(String(describing: r))")
+                }
+            }
+            return
+        }
+
+        // stopbtn 模式：注入一个假的「停止生成」按钮来验证主判定路径（不打扰真实会话）
+        if force == "stopbtn" {
+            let stateJS = "window.__ftAliveDebug ? JSON.stringify(window.__ftAliveDebug.state()) : 'no-alive'"
+            func readState(_ tag: String) {
+                wv.evaluateJavaScript(stateJS) { r, _ in
+                    AppDelegate.log("停止按钮路径 \(tag): \(r as? String ?? "nil")")
+                }
+            }
+            wv.evaluateJavaScript("""
+            (function(){
+              var b = document.createElement('button');
+              b.id = 'ft-fake-stop';
+              b.setAttribute('aria-label', '停止生成');
+              b.style.cssText = 'position:fixed;left:-9999px;top:0;';
+              document.body.appendChild(b);
+              return 'injected';
+            })()
+            """) { r, _ in
+                AppDelegate.log("停止按钮路径: 注入假按钮 -> \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { readState("注入后(期望 busy)") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                wv.evaluateJavaScript("(function(){var e=document.getElementById('ft-fake-stop');if(e)e.remove();return 'removed';})()") { _, _ in }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) { readState("移除后 0.9s(期望 done)") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { readState("移除后 2.2s(期望 idle)") }
+            return
+        }
+
+        // collapse 模式：折叠侧栏，验证机芯退化成「只剩齿轮」
+        if force == "collapse" {
+            wv.evaluateJavaScript("""
+            (function(){var t=document.querySelector('[class$="_toggle"]');if(!t)return 'no-toggle';t.click();return 'clicked';})()
+            """) { r, _ in
+                AppDelegate.log("生灵探针[collapse]: 折叠 -> \(r as? String ?? "nil")")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+                guard let self = self, let wv = self.webView else { return }
+                let full = WKSnapshotConfiguration()
+                full.snapshotWidth = 1180
+                self.writeSnapshot(wv, full, to: "/tmp/ft-alive-collapse.png", label: "全窗[折叠]")
+                wv.evaluateJavaScript("""
+                (function(){var e=document.getElementById('ft-clock');if(!e)return null;var r=e.getBoundingClientRect();
+                return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height,sw:e.querySelector('svg').getBoundingClientRect().width});})()
+                """) { r, _ in
+                    AppDelegate.log("生灵探针[collapse] 机芯几何: \(r as? String ?? "nil")")
+                    guard let s = r as? String,
+                          let d = s.data(using: .utf8),
+                          let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                          let x = o["x"] as? Double, let y = o["y"] as? Double,
+                          let w = o["w"] as? Double, let h = o["h"] as? Double else { return }
+                    let pad = 10.0
+                    let c = WKSnapshotConfiguration()
+                    c.rect = CGRect(x: max(0, x - pad), y: max(0, y - pad), width: w + pad * 2, height: h + pad * 2)
+                    c.snapshotWidth = NSNumber(value: Int((w + pad * 2) * 6))
+                    self.writeSnapshot(wv, c, to: "/tmp/ft-clock-collapse.png", label: "机芯[折叠]")
+                }
+            }
+            return
+        }
+
+        wv.evaluateJavaScript("window.__ftAliveDebug && window.__ftAliveDebug.force(\(AppDelegate.jsStringLiteral(force)))") { _, _ in }
+
+        let stateJS = "window.__ftAliveDebug ? JSON.stringify(window.__ftAliveDebug.state()) : 'no-alive'"
+        for (delay, tag) in [(1.2, "t0"), (2.2, "t1")] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.webView?.evaluateJavaScript(stateJS) { r, _ in
+                    AppDelegate.log("生灵探针[\(force)] \(tag): \(r as? String ?? "nil")")
+                }
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self, let wv = self.webView else { return }
+            let full = WKSnapshotConfiguration()
+            full.snapshotWidth = 1180
+            self.writeSnapshot(wv, full, to: "/tmp/ft-alive-\(force).png", label: "全窗[\(force)]")
+
+            wv.evaluateJavaScript("""
+            (function(){var e=document.getElementById('ft-clock');if(!e)return null;
+            var r=e.getBoundingClientRect();
+            return JSON.stringify({x:r.left,y:r.top,w:r.width,h:r.height});})()
+            """) { res, _ in
+                guard let s = res as? String,
+                      let d = s.data(using: .utf8),
+                      let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+                      let x = o["x"] as? Double, let y = o["y"] as? Double,
+                      let w = o["w"] as? Double, let h = o["h"] as? Double else {
+                    AppDelegate.log("机芯特写[\(force)]: 取不到 #ft-clock")
+                    return
+                }
+                let pad = 12.0
+                let c = WKSnapshotConfiguration()
+                c.rect = CGRect(x: x - pad, y: y - pad, width: w + pad * 2, height: h + pad * 2)
+                c.snapshotWidth = NSNumber(value: Int((w + pad * 2) * 6))
+                self.writeSnapshot(wv, c, to: "/tmp/ft-clock-\(force).png", label: "机芯特写[\(force)]")
+            }
+        }
+    }
+
+    // 截图自检：存在 /tmp/ft-snapshot.flag 时，把左上角品牌区截成 PNG（不需要录屏权限）
+    // 同时若会话里有用户头像，再截一张头像特写（32px 的元素放大 8 倍看细节）
+    private func captureSnapshot() {
+        guard let wv = webView else { return }
+        let cfg = WKSnapshotConfiguration()
+        cfg.rect = CGRect(x: 0, y: 0, width: 460, height: 150)
+        cfg.snapshotWidth = 920
+        writeSnapshot(wv, cfg, to: "/tmp/ft-snapshot.png", label: "品牌区")
+
+        // 头像特写：把最后一个 .ft-av-user 克隆一份钉在视口角落（原地那份可能滚出可视区），
+        // 截完再删掉。这样不需要滚动、不需要录屏权限，也能拿到 8 倍放大的真实渲染。
+        wv.evaluateJavaScript("""
+        (function () {
+          var old = document.getElementById('ft-av-stage');
+          if (old) old.remove();
+          var es = document.querySelectorAll('.ft-av-user');
+          if (!es.length) return null;
+          var src = es[es.length - 1];
+          var stage = src.cloneNode(true);
+          stage.id = 'ft-av-stage';
+          stage.style.cssText += ';position:fixed !important;left:auto !important;top:auto !important;right:20px;bottom:20px;z-index:2147483000;';
+          document.body.appendChild(stage);
+          var r = stage.getBoundingClientRect();
+          var inner = stage.firstElementChild;
+          var cs = inner ? getComputedStyle(inner) : null;
+          return JSON.stringify({
+            count: es.length, x: r.left, y: r.top, w: r.width, h: r.height,
+            maskSize: cs ? (cs.webkitMaskSize || cs.maskSize) : '',
+            maskImage: cs ? (cs.webkitMaskImage || cs.maskImage || '').slice(0, 24) : '',
+            bg: cs ? cs.backgroundColor : ''
+          });
+        })()
+        """) { result, _ in
+            guard let s = result as? String,
+                  let data = s.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let x = obj["x"] as? Double, let y = obj["y"] as? Double,
+                  let w = obj["w"] as? Double, let h = obj["h"] as? Double else {
+                AppDelegate.log("头像截图: 页面里没有用户头像元素")
+                return
+            }
+            AppDelegate.log("头像截图: \(obj["count"] ?? 0) 个 · 几何 \(Int(w))x\(Int(h))@\(Int(x)),\(Int(y)) · maskSize=\(obj["maskSize"] ?? "") · mask=\(obj["maskImage"] ?? "") · bg=\(obj["bg"] ?? "")")
+            let pad = 14.0
+            let c2 = WKSnapshotConfiguration()
+            c2.rect = CGRect(x: x - pad, y: y - pad, width: w + pad * 2, height: h + pad * 2)
+            c2.snapshotWidth = NSNumber(value: Int((w + pad * 2) * 8))
+            self.writeSnapshot(wv, c2, to: "/tmp/ft-avatar.png", label: "头像特写") {
+                wv.evaluateJavaScript("(function(){var e=document.getElementById('ft-av-stage');if(e)e.remove();})()") { _, _ in }
+            }
+        }
+    }
+
+    private func writeSnapshot(_ wv: WKWebView, _ cfg: WKSnapshotConfiguration, to path: String,
+                              label: String, done: (() -> Void)? = nil) {
+        wv.takeSnapshot(with: cfg) { image, error in
+            defer { done?() }
+            guard let image = image,
+                  let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff),
+                  let png = rep.representation(using: .png, properties: [:]) else {
+                AppDelegate.log("截图自检[\(label)]: 失败 \(error?.localizedDescription ?? "无图")")
+                return
+            }
+            do {
+                try png.write(to: URL(fileURLWithPath: path))
+                AppDelegate.log("截图自检[\(label)]: 已写 \(path) (\(png.count) 字节)")
+            } catch {
+                AppDelegate.log("截图自检[\(label)]: 写盘失败 \(error.localizedDescription)")
             }
         }
     }
