@@ -1,13 +1,13 @@
 # 发条屋 (Fatiaowu) — A Native Desktop Shell for DeepSeek Harness
 
 > "发条屋 is a very light door, behind which lies a very large room."
-> A native macOS wrapper for the DeepSeek Harness web UI — with three hand-crafted skins, a live balance monitor, an emoji picker, shortcut skin-switching, and a little glowing whale.
+> A native macOS wrapper for the DeepSeek Harness web UI — with four hand-crafted skins, a live balance monitor, an emoji picker, shortcut skin-switching, and a little glowing whale.
 
 Fatiaowu is a **Swift + AppKit + WKWebView** native macOS app. It does no AI inference itself — it simply wraps your locally running DeepSeek Harness service (`http://127.0.0.1:3080`) in a polished native window.
 
-- **Light**: the whole app is ~1.6 MB (uses the system WebKit, no bundled browser)
+- **Light**: the whole app is ~2.8 MB (uses the system WebKit, no bundled browser)
 - **Fast**: launches instantly, nearly zero startup delay
-- **Beautiful**: three skins (Brass Midnight / Emerald Dawn / Scarlet Lava) with full frosted-glass UI and gentle dynamic particles
+- **Beautiful**: four skins (Brass Midnight / Emerald Dawn / Scarlet Lava / Cyber Ion) with full frosted-glass UI and gentle dynamic particles
 - **Convenient**: auto-starts the backend service at login, shows your live balance and session spend
 
 ---
@@ -16,7 +16,7 @@ Fatiaowu is a **Swift + AppKit + WKWebView** native macOS app. It does no AI inf
 
 | Feature | Description |
 |---|---|
-| 🎨 Three skins | Brass Midnight (work flagship), Emerald Dawn (eye-friendly light), Scarlet Lava (ambient motion) — switch with `⌥⌘1/2/3` |
+| 🎨 Four skins | Brass Midnight (work flagship), Emerald Dawn (eye-friendly light), Scarlet Lava (ambient motion), Cyber Ion (near-black blue, deliberately zero animation) — switch with `⌥⌘1/2/3/4` |
 | 🧊 Frosted glass everywhere | Message bubbles, input card, sidebar, title bar and permission popups |
 | 🐳 Golden whale | AI avatar + gold-bordered user avatar, recolor with the skin |
 | 😊 Emoji picker | 48 common emoji, one click in the input |
@@ -27,6 +27,7 @@ Fatiaowu is a **Swift + AppKit + WKWebView** native macOS app. It does no AI inf
 | 🔊 Read replies aloud | Auto-speaks each reply (toggleable); start talking to interrupt; 8-second continuation window needs no wake word |
 | ⚙️ Clockwork movement | Three meshed gears at the sidebar bottom, speed tracks real AI state; gauge shows **real token counts**, not estimates |
 | 🐋 Whale desktop pet | Swims, dodges the cursor, peeks curiously, double-click to feed, chases bubbles, naps when idle; draggable and throwable |
+| 🌊 **Whale on the desktop (released)** | Let the whale **swim out of the window and live on your real desktop**: a full-screen transparent overlay that ignores the mouse (it only catches hits) and can be dragged anywhere; **drop a file / image / selected text onto it** to feed it. Toggle with `⌥⌘P` |
 | 🎵 Mechanical SFX | Synthesized with Web Audio (winding “click” etc.) — **zero audio files** |
 | 🧬 Upgrade-proof anchors | State detection uses semantic anchors (stats capsule / aria-label / visible text), never CSS-Module hash class names |
 
@@ -34,7 +35,7 @@ Fatiaowu is a **Swift + AppKit + WKWebView** native macOS app. It does no AI inf
 
 ## 🖼 Gallery
 
-Three skins, switch instantly (`⌥⌘1` / `⌥⌘2` / `⌥⌘3`):
+Four skins, switch instantly (`⌥⌘1` / `⌥⌘2` / `⌥⌘3` / `⌥⌘4`); the shots below cover three of them:
 
 | Brass Midnight (work flagship) | Emerald Dawn (light) | Scarlet Lava (ambient) |
 |---|---|---|
@@ -63,7 +64,7 @@ npx -y @deepseek-ai/dsh web
 ```
 
 > Verify with `curl http://127.0.0.1:3080` in another terminal.
-> Note: skins target DSH internal class names. The verified combination frozen in this repo is **DSH `0.1.5-rc.2` + Fatiaowu `2.28.5` (build 93)**.
+> Note: skins target DSH internal class names. The verified combination frozen in this repo is **DSH `0.1.5-rc.2` + Fatiaowu `2.28.6` (build 94)**.
 > To pin the DSH version, start it with an explicit version: `npx -y @deepseek-ai/dsh@0.1.5-rc.2 web`.
 > After a DSH upgrade a few details may need re-pointing (see "Maintenance ▸ Frozen compatibility baseline").
 
@@ -96,7 +97,7 @@ Installs a launchd agent that keeps the DSH service alive, handles port conflict
 ### 5. Use it
 
 - Launch 「发条屋」
-- Switch skins from the menu bar 「发条屋 ▸ 切换皮肤」 or with **⌥⌘1 / ⌥⌘2 / ⌥⌘3**
+- Switch skins from the menu bar 「发条屋 ▸ 切换皮肤」 or with **⌥⌘1 / ⌥⌘2 / ⌥⌘3 / ⌥⌘4**
 - Closing the window quits the app; the backend service keeps running
 
 ---
@@ -110,6 +111,11 @@ fatiaowu-desktop/
 │   ├── skin.css            # Brass Midnight skin
 │   ├── skin-emerald-light.css  # Emerald Dawn skin
 │   ├── skin-scarlet.css    # Scarlet Lava skin
+│   ├── skin-cyber.css      # Cyber Ion skin
+│   ├── voice.js            # Voice layer UI (waveform / interaction; native STT bridged from main.swift)
+│   ├── deskpet.html        # Whale on the desktop (released overlay)
+│   ├── island.html         # Dynamic island (hide-and-seek)
+│   ├── cage.html           # Glass dome (recall the whale)
 │   ├── AppIcon.icns        # Golden icon
 │   └── user-avatar.png     # User avatar (replace with your own)
 ├── service/
@@ -128,17 +134,17 @@ fatiaowu-desktop/
 
 ### Frozen compatibility baseline
 
-Skins are glued onto DSH's internal parts (class names / CSS variables), so *which pair of versions works together* matters more than *each being latest*. This repo treats the combination below as the **verified baseline**, tagged `v2.28.5`:
+Skins are glued onto DSH's internal parts (class names / CSS variables), so *which pair of versions works together* matters more than *each being latest*. This repo treats the combination below as the **verified baseline**, tagged `v2.28.6`:
 
 | | Version |
 |---|---|
-| Fatiaowu | `2.28.5` (build 93) |
+| Fatiaowu | `2.28.6` (build 94) |
 | DeepSeek Harness | `0.1.5-rc.2` |
 
 Going back:
 
 ```bash
-git checkout v2.28.5
+git checkout v2.28.6
 ./scripts/build.sh
 npx -y @deepseek-ai/dsh@0.1.5-rc.2 web     # start the service with the pinned version
 ```
@@ -164,6 +170,7 @@ Drop any image as `resources/user-avatar.png` and rebuild.
 - **Brass Midnight**: the default work skin — calm, restrained, firefly stardust in the workspace
 - **Emerald Dawn**: light theme with drifting morning mist
 - **Scarlet Lava**: lava particles + smoke + breathing glows — the most atmospheric
+- **Cyber Ion**: near-black blue base, ion-cyan outlines, electric-violet fill light and a static grid; **deliberately zero animation**
 
 ---
 

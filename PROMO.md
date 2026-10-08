@@ -2,19 +2,21 @@
 
 ## V2EX 版（技术社区，直接复制）
 
-标题：给 DeepSeek Harness 写了原生 macOS 外壳「发条屋」——三套皮肤 / 全界面毛玻璃 / 余额监控，开源了
+标题：给 DeepSeek Harness 写了原生 macOS 外壳「发条屋」——四套皮肤 / 桌面小鲸鱼 / 离线语音，开源了
 
 正文：
-给 DeepSeek Harness 写了个原生 macOS 桌面外壳「发条屋」——Swift + AppKit + WKWebView，整个 App 只有 1.6MB（不打包浏览器），打开即用。
+给 DeepSeek Harness 写了个原生 macOS 桌面外壳「发条屋」——Swift + AppKit + WKWebView，整个 App 只有 2.8MB（不打包浏览器），打开即用。
 
 （截图上图：暗金·深夜 / 翡翠·晨光 / 猩红·熔岩）
 
 亮点：
-- 三套手搓皮肤：工作用暗金·深夜，护眼用翡翠·晨光，氛围用猩红·熔岩，⌥⌘1/2/3 秒切
+- 四套手搓皮肤：工作用暗金·深夜，护眼用翡翠·晨光，氛围用猩红·熔岩，科技用赛博·离子（零动画），⌥⌘1/2/3/4 秒切
 - 全界面毛玻璃：气泡、输入卡、侧栏、标题栏、权限弹窗全部 frosted glass
 - 无缝粒子动画：猩红熔岩粒子+烟尘+光晕呼吸、暗金工作区萤火虫星尘，循环零跳帧
 - 余额监控：DeepSeek 官方 API，实时显示余额和本次消费
 - 内置浏览器：会话里点外部链接直接在 App 内打开
+- 桌面小鲸鱼（放生）：⌥⌘P 让鲸鱼游出窗口住到桌面上；全屏透明、不挡鼠标；把文件 / 图片 / 文字拖到它身上就能喂它
+- 离线语音输入 + 回复朗读：设备端识别（免费、音频不出本机），唤醒词「小鲸鱼 / 小金鱼」
 - 表情面板、鲸鱼头像、完整会话统计
 
 开源（MIT）：https://github.com/fatiaowu-desktop/fatiaowu-desktop
@@ -30,7 +32,7 @@ DSH 官方社区帖（11 万星项目）：https://github.com/deepseek-ai/deepse
 标题：给 DeepSeek 做了个会发光的桌面 🐳✨
 
 正文：
-把 DeepSeek Harness 变成了原生 Mac 应用「发条屋」——三套皮肤、全界面毛玻璃、余额监控、还有会飘的萤火虫星尘。整个 App 才 1.6MB，比一个表情包还小😂
+把 DeepSeek Harness 变成了原生 Mac 应用「发条屋」——四套皮肤、全界面毛玻璃、余额监控，还有一只能游到桌面上的小鲸鱼🐳。整个 App 才 2.8MB
 
 已开源：github.com/fatiaowu-desktop/fatiaowu-desktop（MIT，随便用）
 （配三张皮肤截图）

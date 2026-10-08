@@ -6,6 +6,13 @@ import WebKit
 import Speech
 import AVFoundation
 
+// ==================== 路径 ====================
+// DSH 的数据目录（凭据 ~/.dsh/.credentials.yaml、日志 ~/.dsh/logs/ 都在这里）。
+// 一律从**当前用户的家目录**推导 —— 不要硬编码 /Users/<名字>：换台机器、换个账号就跑不通。
+let dshDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".dsh", isDirectory: true)
+/// 拼出 ~/.dsh 下的文件路径，例如 ".credentials.yaml"、"logs/fatiaowu-app.log"
+func dshPath(_ rel: String) -> String { dshDir.appendingPathComponent(rel).path }
+
 // 内置浏览器「用默认浏览器打开」按钮（带回调的轻量子类）
 final class BrowserOpenButton: NSButton {
     var onOpen: (() -> Void)?
@@ -3647,7 +3654,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // 从 ~/.dsh/.credentials.yaml 读取 client-connection/browser-session 的持久化 secret
     private static func browserAuthSecret() -> Data? {
-        guard let content = try? String(contentsOfFile: "/Users/yangliu/.dsh/.credentials.yaml", encoding: .utf8) else {
+        guard let content = try? String(contentsOfFile: dshPath(".credentials.yaml"), encoding: .utf8) else {
             return nil
         }
         var secretB64: String?
@@ -4349,7 +4356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // 从 ~/.dsh/.credentials.yaml 读取 DeepSeek API 密钥
     private static func deepseekApiKey() -> String? {
-        guard let content = try? String(contentsOfFile: "/Users/yangliu/.dsh/.credentials.yaml", encoding: .utf8) else {
+        guard let content = try? String(contentsOfFile: dshPath(".credentials.yaml"), encoding: .utf8) else {
             return nil
         }
         for line in content.split(separator: "\n") {
@@ -6089,7 +6096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // 简单日志，写到 ~/.dsh/logs/fatiaowu-app.log 方便排查
     static func log(_ message: String) {
-        let path = "/Users/yangliu/.dsh/logs/fatiaowu-app.log"
+        let path = dshPath("logs/fatiaowu-app.log")
         let line = "[\(Date())] \(message)\n"
         if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) {
             handle.seekToEndOfFile()
