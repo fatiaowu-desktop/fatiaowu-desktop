@@ -63,7 +63,9 @@ npx -y @deepseek-ai/dsh web
 ```
 
 > Verify with `curl http://127.0.0.1:3080` in another terminal.
-> Note: skins target DSH internal class names; currently adapted for `0.1.0-rc.6`. After a DSH upgrade a few details may need re-pointing (see "Maintenance").
+> Note: skins target DSH internal class names. The verified combination frozen in this repo is **DSH `0.1.5-rc.2` + Fatiaowu `2.28.5` (build 93)**.
+> To pin the DSH version, start it with an explicit version: `npx -y @deepseek-ai/dsh@0.1.5-rc.2 web`.
+> After a DSH upgrade a few details may need re-pointing (see "Maintenance ▸ Frozen compatibility baseline").
 
 ### 2. Configure your API key
 
@@ -123,6 +125,25 @@ fatiaowu-desktop/
 ---
 
 ## 🔧 Maintenance
+
+### Frozen compatibility baseline
+
+Skins are glued onto DSH's internal parts (class names / CSS variables), so *which pair of versions works together* matters more than *each being latest*. This repo treats the combination below as the **verified baseline**, tagged `v2.28.5`:
+
+| | Version |
+|---|---|
+| Fatiaowu | `2.28.5` (build 93) |
+| DeepSeek Harness | `0.1.5-rc.2` |
+
+Going back:
+
+```bash
+git checkout v2.28.5
+./scripts/build.sh
+npx -y @deepseek-ai/dsh@0.1.5-rc.2 web     # start the service with the pinned version
+```
+
+`service/dsh-server.sh` only looks for `dsh` in `PATH` and the npx cache — it does **not** pin a version itself, so avoid running the unversioned `npx -y @deepseek-ai/dsh web`.
 
 ### Skins break after a DSH upgrade?
 

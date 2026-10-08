@@ -21,7 +21,7 @@
 DSH 官方社区帖（11 万星项目）：https://github.com/deepseek-ai/deepseek-harness/discussions/2032
 截图：https://github.com/fatiaowu-desktop/fatiaowu-desktop#%F0%9F%96%BC-%E4%B8%80%E8%A7%88
 
-需要 macOS 14+ / Node 18+ / DeepSeek API Key。皮肤适配 DSH 0.1.0-rc.6（升级后可能需要微调，欢迎 PR）。
+需要 macOS 14+ / Node 18+ / DeepSeek API Key。皮肤适配 DSH 0.1.5-rc.2（升级后可能需要微调，欢迎 PR）。
 
 ---
 
@@ -43,7 +43,7 @@ Q: 有 Windows 版吗？
 A: 目前只有 macOS（原生 AppKit）。CSS 皮肤理论上可借浏览器注入，但暂未做跨平台。
 
 Q: DSH 升级后皮肤会坏吗？
-A: 皮肤依赖 DSH 内部类名，适配 0.1.0-rc.6；升级后个别细节需要重新挂钩（README 有教程，欢迎 PR）。
+A: 皮肤依赖 DSH 内部类名，适配 0.1.5-rc.2；升级后个别细节需要重新挂钩（README 有教程，欢迎 PR）。
 
 Q: 会不会泄露 API Key？
 A: 不会。Key 只在本地 ~/.dsh/.credentials.yaml，代码运行时读取，仓库里没有任何密钥。

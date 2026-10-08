@@ -1,0 +1,3317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>发条屋 · 桌面小鲸鱼</title>
+<style>
+/* ─────────────────────────────────────────────────────────────────────────
+   发条屋「放生」层 —— 桌面小鲸鱼
+   它不住在发条屋窗口里，它住在**桌面**上：一块覆盖全屏的透明无边框浮层。
+   原生侧（main.swift → DeskPetController）负责窗口与穿透，这里只管画它、
+   让它活、接住你扔过来的东西。
+
+   ── 造型（2026-09-21 重做）─────────────────────────────────────────────
+   旧版是「一条品牌 logo 路径复制 9 份做渐变着色」：全身焊成一块，尾巴、
+   胸鳍、眼睛都不是独立部件，所以它只能整体平移＋旋转 —— 本质是贴在屏幕
+   上滑动的贴纸，不可能「游」。新版拆成**有骨骼的活物**：
+       尾鳍  → 绕尾根独立摆动（二次谐波去机械感）
+       胸鳍  → 独立拍打，相位与尾巴错开（overlapping action）
+       身体  → 呼吸缩放 + 速度驱动的挤压拉伸（squash & stretch）
+       脸    → 视线可转、可眨眼、吃东西时张嘴
+   三款造型（圆胖幼鲸 / 虎鲸 / 海豚）共用同一套骨骼，只有路径数据不同。
+
+   ── 三条不变量（改这个文件前先读）──────────────────────────────────────
+   ① 着色层必须排在底色之后 —— SVG 按文档顺序绘制，底板不透明，顺序错了
+      明暗肚白全被盖住，屏幕上只剩一块平色。
+   ② 每个 path 必须显式给 fill —— SVG path 默认黑填充，漏一条 = 整只变黑。
+   ③ 数字进 transform 之前必须过 num() —— rotate(NaNdeg) 会被 CSSOM 静默
+      丢弃，不抛异常、style 属性保持空，肉眼与 DOM 都查不出来（历史血案）。
+
+   ── 动作四条（2026-09-22「活鱼」一轮，改动画前先读）──────────────────────
+   ④ 朝向必须**带滞回**：垂直游动时 heading→±90°、cos≈0，每帧现算会让身体在
+      ±1 之间逐帧抽搐。只在 |vx|>26 时才允许改 P.face。
+   ⑤ 屏幕空间的旋转（俯仰/侧倾）一律 **×(±1)**：rollEl 是 rotate(A) scaleX(s)，
+      先镜像后旋转，不乘 flip 会把"下潜"画成"抬头"。
+   ⑥ 摆浪必须挂在**同一个变换层级**里（bendG 包住尾鳍+身体）：分层旋转会在尾根
+      留下 3~4px 的错位台阶。
+   ⑦ 怠速频率 ≤0.6Hz —— 活物静止时几乎不动；超过 1Hz 就读成「抽搐」。
+   ───────────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+/* 皮肤变量只定义在 :root 上。**不要**写成 `html, body { --ft-accent: ... }` ——
+   那样 body 自己持有一份，JS 往 documentElement 上写 inline 变量会被 body 自身的
+   规则盖住，换肤时鲸鱼不变色（本文件第一版就踩了，换肤门当场红）。 */
+:root {
+  /* 默认皮肤：暗金·深夜。原生侧启动后会用 ftSetSkin 覆盖 */
+  --ft-accent: #d9a441;
+  --ft-accent-strong: #e6b95a;
+  --ft-accent-soft: rgba(217, 164, 65, .5);
+  --ft-accent-softer: rgba(217, 164, 65, .35);
+  --ft-accent-bg: rgba(217, 164, 65, .08);
+  --ft-pet-ink: #232733;
+  --ft-pet-belly: #f7ead0;
+}
+html, body {
+  margin: 0; padding: 0; height: 100%; width: 100%;
+  background: transparent; overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  font-family: -apple-system, "PingFang SC", Helvetica, sans-serif;
+}
+
+/* ── 桌面层：默认整层穿透，只有鲸鱼自己接事件 ──────────────────────────
+   pointer-events:none 是「网页内部」的穿透；窗口级的穿透由原生侧
+   ignoresMouseEvents 轮询切换负责。两层都要，缺一层就漏。 */
+#ft-pet-layer { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+
+#ft-pet {
+  position: absolute; left: 0; top: 0; width: 138px; height: 121px;
+  pointer-events: auto; cursor: grab; will-change: transform;
+  opacity: .94; transition: opacity .35s ease;
+}
+#ft-pet:hover { opacity: 1; }
+#ft-pet[data-mood="drag"] { cursor: grabbing; opacity: 1; }
+#ft-pet[data-mood="asleep"] { opacity: .58; }
+#ft-pet[data-mood="dead"] { opacity: .92; }
+#ft-pet[data-mood="eat"] { opacity: 1; }
+
+#ft-pet-shadow {
+  position: absolute; left: 50%; top: 100%; width: 84px; height: 15px;
+  margin: -7px 0 0 -42px; border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.5) 0%, rgba(0,0,0,.24) 44%, rgba(0,0,0,0) 72%);
+  filter: blur(2px); pointer-events: none; transform-origin: 50% 50%;
+}
+/* ── 呼吸辉光（2.24.0）：鱼身外一圈皮肤色柔光，opacity 由 render 按呼吸相位逐帧给 ──
+   为什么不给下面那条 drop-shadow 直接加关键帧：drop-shadow 是**滤镜**，每帧改它等于
+   每帧重算整只鱼的滤镜 → 重绘；那正是刚压下去的那笔开销，不能反悔。
+   这里是一个独立的柔光层：静态画一次（radial-gradient + blur），之后只由合成器调透明度，
+   不重绘、不动盒子（所以也不可能重演「伪元素外扩污染滚动溢出」那次事故）。 */
+#ft-pet-halo {
+  position: absolute; inset: -10px; border-radius: 50%;
+  background: radial-gradient(ellipse 50% 33% at 50% 58%, var(--ft-accent-soft) 0%, rgba(255,255,255,0) 72%);
+  filter: blur(7px); opacity: 0; pointer-events: none;
+  will-change: opacity;
+}
+#ft-pet-lift { position: absolute; inset: 0; will-change: transform; transform-origin: 50% 50%;
+  filter: drop-shadow(0 3px 10px rgba(0,0,0,.36)) drop-shadow(0 0 8px var(--ft-accent-bg)); }
+#ft-pet-squash { position: absolute; inset: 0; will-change: transform; transform-origin: 50% 80%; }
+#ft-pet-roll { position: absolute; inset: 0; will-change: transform; transform-origin: 50% 54%; }
+#ft-pet svg { display: block; overflow: visible; }
+
+/* ── 鲸鱼本体着色 ───────────────────────────────────────────────────────
+   纯色分层（赛璐璐），不是渐变 —— 动画片就是这么画的，硬边是特性不是缺陷。
+   color-mix 用来从皮肤色派生亮/暗两档；不支持时退回 --ft-accent-strong。 */
+.ft-pet-body  { fill: var(--ft-accent); }
+.ft-pet-clipshape { fill: #000; }
+.ft-pet-fill  { fill: var(--ft-accent); }
+.ft-pet-lit   { fill: var(--ft-accent-strong); fill: color-mix(in srgb, var(--ft-accent) 80%, #fff); }
+.ft-pet-dark  { fill: rgba(0, 0, 0, .17); }
+.ft-pet-belly { fill: var(--ft-pet-belly); }
+.ft-pet-sheen { fill: rgba(255, 255, 255, .30); }
+.ft-pet-patch { fill: var(--ft-pet-belly); }
+/* 幼鲸腮红（幼态身份证）：一朵淡玫瑰贴在嘴角上方，只由 calf 的 blush 参数触发 */
+.ft-pet-blush { fill: rgba(226, 116, 116, .38); }
+/* 海豚背影（计数阴影身份证）：背部分割线以上压一层冷调暗影，背深腹浅 */
+.ft-pet-back  { fill: rgba(30, 44, 62, .20); }
+/* 熊猫背甲（twoTone style:'ink'）：实墨色肩带，分界线以下留白肚 */
+.ft-pet-back-ink { fill: var(--ft-pet-ink); }
+/* 熊猫款（calf）：鳍/尾/背鳍吃墨色，眼白垫底——黑眼罩上黑瞳孔才看得见 */
+.ft-pet-ink-fill { fill: var(--ft-pet-ink); }
+.ft-pet-sclera  { fill: #fdfdfd; }
+.ft-pet-tail  { filter: brightness(.84) saturate(1.06); }
+.ft-pet-fin   { filter: brightness(.9) saturate(1.04); }
+/* 远侧（身体另一侧）那片：**更暗**。侧视里它是背光的那一侧，同色会读成
+   "两片一样的鳍并排"，压暗 + 略降饱和才有前后层次。 */
+.ft-pet-fin-far { filter: brightness(.68) saturate(.80); }
+.ft-pet-pupil { fill: var(--ft-pet-ink); }
+.ft-pet-glint, .ft-pet-glint2 { fill: #fff; }
+.ft-pet-glint2 { opacity: .6; }
+.ft-pet-mouth-fill { fill: var(--ft-pet-ink); }
+.ft-pet-mouth-line { fill: none; stroke: var(--ft-pet-ink); stroke-linecap: round; }
+.ft-pet-mouth-open { fill: var(--ft-pet-ink); display: none; }
+#ft-pet[data-mouth="open"] .ft-pet-mouth-open { display: block; }
+#ft-pet[data-mouth="open"] .ft-pet-mouth-line,
+#ft-pet[data-mouth="open"] .ft-pet-mouth-fill { display: none; }
+#ft-pet:hover .ft-pet-body { filter: drop-shadow(0 2px 6px rgba(0,0,0,.34)) drop-shadow(0 0 9px var(--ft-accent-soft)); }
+
+/* ── 机械涂装（data-look="mech"） ─────────────────────────────────────────
+   由皮肤声明 `--ft-look: mech` 驱动（原生 extractSkinVars 抽出来推给页面），
+   也可以被原生单独推（以后加菜单项用）。几何由 build() 里注入的
+   #ft-pet-mech 零件提供；这里只管**着色**：金属分层 + 青缝 + 冷铆钉。
+   全部走 fill/stroke/opacity，无 filter 逐帧、无新盒子 → 零布局代价。 */
+#ft-pet[data-look="mech"] .ft-pet-body  { fill: url(#ft-pet-metal); stroke: rgba(0,0,0,.55); stroke-width: 1.1; }
+#ft-pet[data-look="mech"] .ft-pet-fill  { fill: url(#ft-pet-metal); stroke: rgba(0,0,0,.45); stroke-width: 1; }
+#ft-pet[data-look="mech"] .ft-pet-lit   { fill: #eaf2f9; opacity: .44; }
+#ft-pet[data-look="mech"] .ft-pet-belly { fill: #7a8794; opacity: .85; }
+#ft-pet[data-look="mech"] .ft-pet-dark  { fill: rgba(0,0,0,.36); }
+#ft-pet[data-look="mech"] .ft-pet-sheen { fill: rgba(255,255,255,.55); }
+#ft-pet[data-look="mech"] .ft-pet-tail  { filter: brightness(.88); }
+#ft-pet[data-look="mech"] .ft-pet-fin   { filter: brightness(.96); }
+#ft-pet[data-look="mech"] .ft-pet-fin-far { filter: brightness(.6) saturate(.7); }
+#ft-pet[data-look="mech"] .ft-pet-mouth-fill { fill: rgba(0,0,0,.5); }
+/* 眼睛 → 环形传感器：深瞳 + 青环 + 青光点 */
+#ft-pet[data-look="mech"] .ft-pet-pupil  { fill: #060f13; stroke: var(--ft-accent); stroke-width: 1.4; }
+#ft-pet[data-look="mech"] .ft-pet-glint  { fill: var(--ft-accent); }
+#ft-pet[data-look="mech"] .ft-pet-glint2 { fill: var(--ft-accent); opacity: .5; }
+/* 零件：板缝（发光细线）/ 铆钉（冷金属点）/ 格栅（压暗短缝）/ 镜头环 */
+#ft-pet[data-look="mech"] .ft-pet-seam   { fill: none; stroke: var(--ft-accent); stroke-width: 1.3; stroke-linecap: round; opacity: .85; }
+#ft-pet[data-look="mech"] .ft-pet-rivet  { fill: #c2ccd8; }
+#ft-pet[data-look="mech"] .ft-pet-grille { fill: none; stroke: rgba(0,0,0,.4); stroke-width: 1.6; stroke-linecap: round; }
+#ft-pet[data-look="mech"] .ft-pet-lens   { fill: none; stroke: var(--ft-accent); stroke-width: 1.6; opacity: .9; }
+/* 零件只在机械涂装下出现（属性缺失也算非 mech） */
+#ft-pet:not([data-look="mech"]) #ft-pet-mech,
+#ft-pet:not([data-look="mech"]) .ft-pet-turbine,
+#ft-pet:not([data-look="mech"]) .ft-pet-seam,
+#ft-pet:not([data-look="mech"]) .ft-pet-rivet,
+#ft-pet:not([data-look="mech"]) .ft-pet-grille,
+#ft-pet:not([data-look="mech"]) .ft-pet-lens { display: none; }
+/* ── 河道之灵（data-breed="clockwork"）：灵体涂装 ────────────────────────
+   王者「河道之灵」的读法：半透明灵体 + 亮边 + 莲冠 + 光点 + 水波纹。
+   **全矢量 + CSS 动效**。原先的 AI 位图分层（v1~v3）已整体删除：那套素材的
+   尾片/鳍片切弧圆心与旋转枢轴不同心（实测 476.5 / 416.6 / 442.5 三个心），
+   只要摆动就必然撕开金色尖刺与缺口 —— 位图方案的原生病，删掉才是真修好。
+   颜色一律走 currentColor（CSS 变量写进 SVG 属性不生效，见 build() 注释）。 */
+#ft-pet[data-breed="clockwork"] { color: var(--ft-accent); }
+#ft-pet[data-breed="clockwork"] .ft-pet-body,
+#ft-pet[data-breed="clockwork"] .ft-pet-fill {
+  fill: url(#ft-spirit-body);
+  stroke: url(#ft-spirit-rim);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 7px var(--ft-accent-soft));
+}
+#ft-pet[data-breed="clockwork"] .ft-pet-lit   { fill: #fff; opacity: .20; }
+#ft-pet[data-breed="clockwork"] .ft-pet-dark  { fill: rgba(2, 20, 34, .09); }
+#ft-pet[data-breed="clockwork"] .ft-pet-belly { fill: #f2feff; opacity: .36; }
+#ft-pet[data-breed="clockwork"] .ft-pet-sheen { fill: #fff; opacity: .5; }
+#ft-pet[data-breed="clockwork"] .ft-pet-patch { fill: #eafcff; opacity: .35; }
+#ft-pet[data-breed="clockwork"] .ft-pet-tail  { filter: brightness(1.14) saturate(1.05); opacity: .80; }
+#ft-pet[data-breed="clockwork"] .ft-pet-fin   { filter: brightness(1.18) saturate(1.05); opacity: .78; }
+#ft-pet[data-breed="clockwork"] .ft-pet-fin-far { filter: brightness(.80) saturate(.85); opacity: .55; }
+#ft-pet[data-breed="clockwork"] .ft-pet-mouth-fill { fill: rgba(4, 34, 48, .55); }
+#ft-pet[data-breed="clockwork"] .ft-pet-pupil { fill: #062330; }
+/* 灵体组件只在河道之灵档显形（其余造型走矢量骨架鲸，各档分工明确） */
+#ft-pet:not([data-breed="clockwork"]) #ft-spirit-back,
+#ft-pet:not([data-breed="clockwork"]) #ft-spirit-front { display: none; }
+/* 动效只用 transform / opacity（零布局代价）。
+   ⚠️ transform-box: view-box 必须显式写 —— 否则 transform-origin 的解释基准
+      在 WebKit 与 Blink 之间不一致，会绕错点转（SVG 动画的老坑）。 */
+#ft-spirit-aura    { transform-box: view-box; transform-origin: 82px -4px; animation: ft-spirit-aura 4.8s ease-in-out infinite; }
+#ft-spirit-ripple1 { transform-box: view-box; transform-origin: 82px 34px; animation: ft-spirit-ripple 3.8s ease-out infinite; }
+#ft-spirit-ripple2 { transform-box: view-box; transform-origin: 82px 34px; animation: ft-spirit-ripple 3.8s ease-out infinite; animation-delay: 1.9s; }
+#ft-spirit-lotus   { transform-box: view-box; transform-origin: 112px 24px; animation: ft-spirit-lotus 4.2s ease-in-out infinite; }
+.ft-spirit-mote    { animation: ft-spirit-mote 4.4s ease-in-out infinite; }
+@keyframes ft-spirit-aura {
+  0%, 100% { opacity: .50; transform: scale(1); }
+  50%      { opacity: .78; transform: scale(1.06); }
+}
+@keyframes ft-spirit-ripple {
+  0%   { opacity: .45; transform: scale(.82); }
+  100% { opacity: 0;   transform: scale(1.22); }
+}
+@keyframes ft-spirit-lotus {
+  0%, 100% { transform: rotate(-3.5deg); }
+  50%      { transform: rotate(3.5deg); }
+}
+@keyframes ft-spirit-mote {
+  0%   { opacity: 0;   transform: translateY(7px) scale(.9); }
+  25%  { opacity: .95; }
+  100% { opacity: 0;   transform: translateY(-22px) scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #ft-spirit-aura, #ft-spirit-ripple1, #ft-spirit-ripple2,
+  #ft-spirit-lotus, .ft-spirit-mote { animation: none !important; }
+}
+/* 机械档：装甲自带镜头眼 → 藏掉骨架的卡通眼与高光 */
+#ft-pet[data-look="mech"] .ft-pet-pupil,
+#ft-pet[data-look="mech"] .ft-pet-glint,
+#ft-pet[data-look="mech"] .ft-pet-glint2 { display: none; }
+#ft-pet[data-look="mech"] #ft-pet-eye { display: none; }   /* faceG 里的整只眼（含白眼 #ft-pet-sclera）在图之上 */
+
+/* ── 河道之灵 × 机械涂装皮肤 ────────────────────────────────────────────
+   赛博·离子等皮肤会声明 `--ft-look: mech`，于是骨架套上金属装甲、
+   并且把卡通眼藏掉（机械档自带镜头眼）。但河道之灵是**灵体**：
+   不该被加装甲，眼睛也不该消失。多带一个属性选择器抬特异性 + !important，
+   免得再被文件顺序左右（这条排在 mech 规则之后）。 */
+#ft-pet[data-breed="clockwork"][data-look] #ft-pet-eye,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-pupil,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-glint,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-glint2 { display: inline !important; }
+#ft-pet[data-breed="clockwork"][data-look] #ft-pet-mech,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-turbine,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-seam,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-rivet,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-grille,
+#ft-pet[data-breed="clockwork"][data-look] .ft-pet-lens { display: none !important; }
+
+/* ── 头顶气泡：它的「输出」不进聊天流，直接浮在你桌面上 ───────────────── */
+.ft-dp-bubble {
+  position: absolute; max-width: 360px; padding: 10px 13px;
+  border-radius: 13px; border: 1px solid var(--ft-accent-softer);
+  background: rgba(20, 24, 34, .93);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  color: #e9edf5; font-size: 12.5px; line-height: 1.62;
+  pointer-events: none; opacity: 0;
+  animation: ft-dp-bubble-in .26s cubic-bezier(.22,1.1,.4,1) forwards;
+}
+.ft-dp-bubble[data-light="1"] { background: rgba(255,255,255,.96); color: #1e2330; box-shadow: 0 10px 28px rgba(20,30,50,.22); }
+.ft-dp-bubble::after {
+  content: ""; position: absolute; left: 26px; bottom: -6px; width: 10px; height: 10px;
+  background: inherit; border-right: 1px solid var(--ft-accent-softer);
+  border-bottom: 1px solid var(--ft-accent-softer); transform: rotate(45deg);
+}
+.ft-dp-bubble[data-fade="1"] { animation: ft-dp-bubble-out .5s ease forwards; }
+@keyframes ft-dp-bubble-in  { 0% { opacity: 0; transform: translateY(8px) scale(.94); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes ft-dp-bubble-out { 0% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+.ft-dp-bubble-title { font-weight: 500; font-size: 12.5px; margin-bottom: 3px; color: var(--ft-accent); }
+.ft-dp-bubble[data-light="1"] .ft-dp-bubble-title { color: var(--ft-accent); }
+.ft-dp-bubble-sub { font-size: 11px; color: #98a1b4; margin-bottom: 6px; }
+.ft-dp-bubble[data-light="1"] .ft-dp-bubble-sub { color: #7c869a; }
+/* 工作哨兵的气泡（2.24.0）：同视觉，只加一道强调色细边把「正事」与「闲话」分开。
+   刻意不做成可点的样子 —— 浮层全穿透，气泡本来就点不到，别诱导用户去点。 */
+.ft-dp-work { border-left: 2px solid var(--ft-accent-soft); }
+.ft-dp-bubble-body {
+  font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  max-height: 190px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 74%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 74%, transparent 100%);
+}
+.ft-dp-bubble-body img { display: block; max-width: 100%; border-radius: 8px; }
+
+/* ── 麦克风 chip（2.19.0 鱼对答）：贴鱼正下方的小玻璃胶囊，随鱼游动 ──────
+   idle 一枚话筒 + 「对答」二字；listening 变波形条（高度由电平驱动）；
+   thinking 三粒呼吸点。点击=开始/取消，位置随鱼但不算鱼身（碰撞用不到它）。 */
+.ft-dp-mic {
+  position: absolute; height: 24px; padding: 0 10px; border-radius: 12px;
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--ft-accent-softer);
+  background: rgba(20, 24, 34, .82);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  color: var(--ft-accent); font-size: 10.5px; letter-spacing: 2px;
+  cursor: pointer; pointer-events: auto; opacity: 0; transition: opacity .3s;
+  user-select: none; -webkit-user-select: none;
+}
+.ft-dp-mic[data-on="1"] { opacity: 1; }
+.ft-dp-mic[data-light="1"] { background: rgba(255, 255, 255, .9); }
+.ft-dp-mic svg { flex: none; width: 11px; height: 11px; display: block; }
+.ft-dp-mic > i { display: none; width: 2.5px; border-radius: 1.5px; background: var(--ft-accent); height: 9px; transition: height .08s linear; }
+.ft-dp-mic-label { line-height: 1; padding-top: 1px; }
+.ft-dp-mic[data-state="listening"] {
+  border-color: var(--ft-accent-soft);
+  box-shadow: 0 0 12px var(--ft-accent-softer);
+}
+.ft-dp-mic[data-state="listening"] .ft-dp-mic-label { display: none; }
+.ft-dp-mic[data-state="listening"] > i { display: block; }
+.ft-dp-mic-dots { display: none; align-items: center; gap: 2.5px; }
+.ft-dp-mic[data-state="thinking"] .ft-dp-mic-label { display: none; }
+.ft-dp-mic[data-state="thinking"] .ft-dp-mic-dots { display: flex; }
+.ft-dp-mic-dots i {
+  display: block; width: 3px; height: 3px; border-radius: 50%; background: var(--ft-accent);
+  animation: ft-dp-mic-dot 1s ease-in-out infinite;
+}
+.ft-dp-mic-dots i:nth-child(2) { animation-delay: .18s; }
+.ft-dp-mic-dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes ft-dp-mic-dot { 0%, 100% { opacity: .22; } 50% { opacity: 1; } }
+
+/* ── 长按轮盘（2.20.0 / 2.21.5 苹果玻璃重制）：按住鱼身 850ms 呼出四项 ─────
+   苹果毛玻璃三件套：低透暗底 + 大半径 blur+saturate、白色发丝描边、
+   内嵌顶缘高光 + 外抛软阴影。弹出 = 四片从鱼心飞出（回弹曲线+阶梯延迟）；
+   收起 = 全体无延迟快速吸回（open 的 delay 只写在 [data-on] 态，closed 态为 0）。 */
+.ft-dp-wheel {
+  position: absolute; width: 0; height: 0; pointer-events: none;
+  opacity: 0; transition: opacity .14s ease-in;
+}
+.ft-dp-wheel[data-on="1"] { opacity: 1; transition: opacity .2s ease-out; }
+.ft-dp-wheel-item {
+  position: absolute; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+  border-radius: 50%; pointer-events: auto; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(28, 30, 40, .36);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .38),
+              inset 0 1px 0 rgba(255, 255, 255, .22),
+              inset 0 -1px 0 rgba(255, 255, 255, .05);
+  /* 字/图标固定白（浅色态见 data-light），不跟皮肤 accent 走（2026-09-22 用户定） */
+  color: #fff;
+  /* closed 态：向鱼心收缩 70% 并缩小 —— 弹出时从鱼心飞出，收起时吸回 */
+  transform: translate(calc(var(--wx, 0px) * -0.7), calc(var(--wy, 0px) * -0.7)) scale(.25);
+  opacity: 0; visibility: hidden;
+  transition: transform .16s cubic-bezier(.4, 0, .8, .6), opacity .13s ease-in,
+              border-color .15s, background .15s, visibility 0s linear .18s;
+  user-select: none; -webkit-user-select: none;
+}
+.ft-dp-wheel[data-on="1"] .ft-dp-wheel-item {
+  transform: translate(0, 0) scale(1); opacity: 1; visibility: visible;
+  transition: transform .46s cubic-bezier(.26, 1.52, .48, 1), opacity .2s ease-out,
+              border-color .15s, background .15s;
+}
+/* 弹出阶梯：聊天→回笼→上岛→换肤 依次飞出；收起时这些 delay 不生效（closed 态无 delay） */
+.ft-dp-wheel[data-on="1"] .ft-dp-wheel-item:nth-child(2) { transition-delay: 45ms; }
+.ft-dp-wheel[data-on="1"] .ft-dp-wheel-item:nth-child(3) { transition-delay: 90ms; }
+.ft-dp-wheel[data-on="1"] .ft-dp-wheel-item:nth-child(4) { transition-delay: 135ms; }
+.ft-dp-wheel-item:hover {
+  border-color: rgba(255, 255, 255, .34);
+  background: rgba(66, 70, 90, .46);
+}
+.ft-dp-wheel-item svg { width: 16px; height: 16px; display: block; }
+.ft-dp-wheel-item span {
+  font-size: 10px; font-weight: 500; letter-spacing: 1px; line-height: 1;
+}
+.ft-dp-wheel[data-light="1"] .ft-dp-wheel-item {
+  background: rgba(255, 255, 255, .42);
+  border-color: rgba(255, 255, 255, .65);
+  color: #17181d;
+  box-shadow: 0 6px 20px rgba(40, 50, 80, .16),
+              inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+
+/* 水泡（旧鲸鱼的喷潮/睡觉冒泡）：半透明小圆上浮消散 —— 与「说话气泡」是两回事 */
+.ft-dp-wbub { position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,.72); background: rgba(255,255,255,.16);
+  pointer-events: none; animation: ft-dp-wbub 1.15s ease-out forwards; }
+@keyframes ft-dp-wbub {
+  0%   { opacity: 0; transform: translate(0, 0) scale(.4); }
+  18%  { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--wx, 0px), -46px) scale(1); } }
+.ft-dp-thumb { display: flex; align-items: center; gap: 9px; }
+.ft-dp-icon {
+  flex: none; width: 34px; height: 34px; border-radius: 9px;
+  border: 1px solid var(--ft-accent-softer); background: var(--ft-accent-bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 500; color: var(--ft-accent); letter-spacing: .3px;
+}
+
+/* ── 投喂：张嘴 + 食物颗粒 + 咀嚼 ─────────────────────────────────────── */
+.ft-dp-food {
+  position: absolute; width: 11px; height: 11px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff6dc 0%, var(--ft-accent) 62%, rgba(0,0,0,.22) 100%);
+  box-shadow: 0 0 9px var(--ft-accent-soft); pointer-events: none;
+  transition: transform .34s cubic-bezier(.4,.1,.3,1), opacity .34s;
+}
+.ft-dp-cage { position: absolute; pointer-events: none; }
+/* 玻璃穹顶（2.17.3）：规整拱顶（固定像素半径）+ 安静玻璃 —— 顶部一条 rim light、
+   底部一道细基座线，不再脉动/大高光；颜色仍吃 --ft-accent 系皮肤变量，换肤自动跟色 */
+/* ★ 2.18.0：穹顶视觉搬进主窗口子视图（resources/cage.html）——桌面浮层 30Hz 推坐标
+   会拖窗口不同步、浮层级太高会压到别的应用。这里 .shell 保留在 DOM 里只为
+   data-open 状态机/探针兼容，display:none 不再画；围栏物理、边条命中、鱼本身不动。 */
+.ft-dp-cage .shell {
+  display: none;
+  position: absolute; inset: 0;
+  border-radius: 75px 75px 8px 8px / 62px 62px 8px 8px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.015) 48%, transparent 72%),
+    var(--ft-accent-bg);
+  border: 1px solid var(--ft-accent-softer);   /* 底沿只有这一条线 —— 不再叠 ::after 基座线 */
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 0 8px var(--ft-accent-softer);
+  /* 速度：无过冲缓动；origin 压在底沿 —— 消散时玻璃向下收进基线，不往上飘 */
+  transform-origin: 50% 100%;
+  transition: opacity .42s ease-out, transform .42s cubic-bezier(.4, 0, .2, 1);
+}
+/* 开门 = 玻璃罩消散 */
+.ft-dp-cage[data-open="1"] .shell { opacity: 0; transform: scaleY(.5); }
+.ft-dp-cage .hit { position: absolute; background: transparent; pointer-events: auto; }
+.ft-dp-cage .hit.t { left: 0; right: 0; top: 0; height: 14px; }
+.ft-dp-cage .hit.b { left: 0; right: 0; bottom: 0; height: 14px; }
+.ft-dp-cage .hit.l { top: 0; bottom: 0; left: 0; width: 14px; }
+.ft-dp-cage .hit.r { top: 0; bottom: 0; right: 0; width: 14px; }
+.ft-dp-cage.shake { animation: ft-cage-shake .42s ease; }
+@keyframes ft-cage-shake {
+  0%,100% { transform: translate(0,0); } 20% { transform: translate(-2.5px,0); }
+  45% { transform: translate(2.5px,-1px); } 70% { transform: translate(-1.5px,1px); }
+}
+#ft-pet[data-mood="dead"] { opacity: .92; }
+.ft-dp-carry {
+  position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px;
+  border-radius: 6px; pointer-events: none; opacity: 0;
+  background: linear-gradient(160deg, rgba(255,255,255,.94), rgba(255,255,255,.55));
+  border: 1px solid var(--ft-accent-soft);
+  box-shadow: 0 1px 4px rgba(0,0,0,.18);
+  font: 700 9px/18px -apple-system, "PingFang SC", sans-serif; text-align: center;
+  color: #2b2b33; letter-spacing: .2px;
+  transition: opacity .3s;
+}
+.ft-dp-carry .n {
+  position: absolute; right: -7px; top: -7px; min-width: 14px; height: 14px;
+  border-radius: 7px; background: var(--ft-accent); color: #fff;
+  font: 700 9px/14px -apple-system, sans-serif; text-align: center; padding: 0 3px;
+  box-shadow: 0 0 6px var(--ft-accent-soft);
+}
+.ft-dp-crumb {
+  position: absolute; width: 3px; height: 3px; border-radius: 50%;
+  background: var(--ft-accent-soft); pointer-events: none; opacity: 0;
+}
+.ft-dp-heart { position: absolute; width: 11px; height: 10px; opacity: 0; animation: ft-dp-heart-up 1.3s ease-out forwards; pointer-events: none; }
+.ft-dp-heart::before, .ft-dp-heart::after {
+  content: ""; position: absolute; top: 0; width: 5.5px; height: 9px; border-radius: 5.5px 5.5px 0 0; background: var(--ft-accent-soft);
+}
+.ft-dp-heart::before { left: 5.5px; transform-origin: 0 100%; transform: rotate(-45deg); }
+.ft-dp-heart::after  { left: 0;    transform-origin: 100% 100%; transform: rotate(45deg); }
+@keyframes ft-dp-heart-up { 0% { opacity: 0; transform: translate(0,0) scale(.35); } 22% { opacity: .92; } 100% { opacity: 0; transform: translate(var(--hx,0),-32px) scale(1.05); } }
+.ft-dp-ripple {
+  position: absolute; width: 22px; height: 9px; margin: -4px 0 0 -11px; border-radius: 50%;
+  border: 1px solid var(--ft-accent-soft); opacity: 0; animation: ft-dp-ripple-out 1.05s ease-out forwards; pointer-events: none;
+}
+@keyframes ft-dp-ripple-out { 0% { opacity: .5; transform: scale(.35); } 100% { opacity: 0; transform: translate(var(--rx,0),7px) scale(1.6); } }
+.ft-dp-spark {
+  position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; opacity: 0;
+  animation: ft-dp-spark-out 1s ease-out forwards; pointer-events: none;
+}
+.ft-dp-spark::before, .ft-dp-spark::after {
+  content: ""; position: absolute; left: 50%; top: 50%; border-radius: 2px;
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.96) 50%, rgba(255,255,255,0) 100%);
+}
+.ft-dp-spark::before { width: 15px; height: 1.5px; margin: -0.75px 0 0 -7.5px; }
+.ft-dp-spark::after  { width: 1.5px; height: 15px; margin: -7.5px 0 0 -0.75px;
+  background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.96) 50%, rgba(255,255,255,0) 100%); }
+@keyframes ft-dp-spark-out { 0% { opacity: 0; transform: scale(.25) rotate(0deg); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.35) rotate(120deg) translateY(-10px); } }
+
+/* ── 拖放悬停：整屏一圈呼吸光，告诉你「现在扔它身上就行」 ─────────────── */
+#ft-dp-dropzone {
+  position: fixed; inset: 0; pointer-events: none; opacity: 0;
+  transition: opacity .2s ease;
+  box-shadow: inset 0 0 0 2px var(--ft-accent-soft), inset 0 0 90px var(--ft-accent-bg);
+}
+#ft-dp-dropzone[data-on="1"] { opacity: 1; animation: ft-dp-zone 1.5s ease-in-out infinite; }
+@keyframes ft-dp-zone { 0%,100% { box-shadow: inset 0 0 0 2px var(--ft-accent-soft), inset 0 0 70px var(--ft-accent-bg); } 50% { box-shadow: inset 0 0 0 2px var(--ft-accent), inset 0 0 120px var(--ft-accent-bg); } }
+</style>
+
+</head>
+<body>
+<div id="ft-pet-layer">
+  <div id="ft-pet" data-mood="roam" data-mouth="shut"></div>
+</div>
+<div id="ft-dp-dropzone" data-on="0"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var svgns = 'http://www.w3.org/2000/svg';
+  var TAU = Math.PI * 2;
+
+  /* ── PETRIG · 参数化造型框架 ──────────────────────────────────────────────
+     造型 = **一组数字**（见下面的 BREED_PARAMS）。所有路径由 PETRIG 派生：
+
+       解剖参数 ──┬─ 轮廓（Catmull-Rom 样条过背线/腹线控制点，闭合）
+                  ├─ 三层着色（亮背 / 主色 / 白腹 / 暗缘）＝ 从背腹线向内的**色带**
+                  │    → "白肚上边界与嘴线共线"这件事由构造保证，不用靠记性
+                  ├─ 受光（背线月牙 + 头部高光）＝ 背线再向内一道
+                  ├─ 背鳍 / 眼罩 ＝ 由基准点 + 高度 + 后掠角算
+                  ├─ 胸鳍 ＝ 局部桨形 × (挂点, 角度, 比例)
+                  ├─ 尾鳍 ＝ 一片共用桨（含浅缺口）
+                  └─ 眼 ＋ 高光 ＝ 由"眼占体高的比例"推出来，不手填绝对值
+
+     两件工具：
+       PETRIG.audit()   逐条验**几何不变量**（体长比 / 眼占比 / 鳍根宽 / 尾柄台阶…）
+       PETRIG.dErrors() **路径语法**校验（命令后参数个数、NaN）
+     ⚠️ 为什么需要 dErrors：手写路径时"漏一个空格"会让浏览器**整条 d 丢弃**，
+        部件凭空消失、页面不报错、只在 console 留一行 —— 这类错误必须挡在生成期。 */
+  var PETRIG = (function () {
+
+    /* 数值统一出口：非有限值降级成默认值，绝不把 NaN 写进路径 */
+    function nf(v, d) { v = Number(v); return isFinite(v) ? v : d; }
+    function q(v) { return String(Math.round(nf(v, 0) * 10) / 10); }
+    function P(p) { return q(p[0]) + ',' + q(p[1]); }
+
+    /* ── 路径语法校验：命令 + 参数个数 + 全部有限 ───────────────────────── */
+    var ARGC = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
+    function dErrors(d) {
+      var out = [];
+      if (typeof d !== 'string' || !d) return ['路径为空'];
+      var re = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g, m, any = false;
+      while ((m = re.exec(d)) !== null) {
+        any = true;
+        var cmd = m[1], body = m[2].trim();
+        var nums = body ? body.split(/[\s,]+/) : [];
+        for (var i = 0; i < nums.length; i++) {
+          if (!isFinite(Number(nums[i]))) out.push(cmd + ' 参数 "' + nums[i] + '" 不是有限数字');
+        }
+        var need = ARGC[cmd.toUpperCase()];
+        if (need === 0) { if (nums.length) out.push(cmd + ' 不应带参数'); }
+        else if (nums.length % need !== 0) out.push(cmd + ' 参数个数 ' + nums.length + ' 不是 ' + need + ' 的整数倍');
+      }
+      if (!any) out.push('没有命令字母');
+      return out;
+    }
+
+    /* ── 样条：Catmull-Rom → 三次贝塞尔（closed=true 首尾相接） ───────────
+       vfix：可选。vfix[i] 为真 → 第 i 个结点的切矢 **x 分量清零**（切线取竖直）。
+       用途：尾柄两侧结点取竖直切线 → 身体轮廓**竖直**收进尾柄。不修正时均匀
+       Catmull-Rom 会把这两处的切矢甩向右方、轮廓外鼓约 3 个单位戳进尾鳍。
+       只清零 x、保留 y 与切矢长度，且相邻两段共用同一个修正后的切矢 → C1 不破。
+       不传 vfix 时与旧实现**逐字节等价**（原式 (p2-p0)/6 就是这里 mi/3 的展开）。 */
+    function cr(pts, closed, vfix) {
+      var n = pts.length, i, d = 'M' + P(pts[0]);
+      function at(k) { return closed ? pts[(k % n + n) % n] : pts[Math.max(0, Math.min(n - 1, k))]; }
+      function kv(k) {
+        var a = at(k - 1), b = at(k + 1), mx = (b[0] - a[0]) / 2;
+        return [vfix && vfix[k] ? 0 : mx, (b[1] - a[1]) / 2];
+      }
+      var last = closed ? n : n - 1;
+      for (i = 0; i < last; i++) {
+        var p1 = at(i), p2 = at(i + 1), mi = kv(i), mj = kv(i + 1);
+        d += ' C' + P([p1[0] + mi[0] / 3, p1[1] + mi[1] / 3]) +
+             ' ' + P([p2[0] - mj[0] / 3, p2[1] - mj[1] / 3]) + ' ' + P(p2);
+      }
+      return d + (closed ? ' Z' : '');
+    }
+
+    /* ── 色带：一条边界曲线 + 往远处兜的三个角点（多余部分被身体裁掉） ────
+       ⚠️ `edge` 必须**按 x 从左到右**排。反着传会让闭合墙落在右端，
+          整条带子塌成一条细缝（实测：白肚成了底边上一根奶油色细线）。 */
+    function band(edge, xFar, yFar) {
+      var a = edge[0], b = edge[edge.length - 1];
+      return cr(edge, false) + ' L' + q(xFar) + ',' + q(b[1]) +
+             ' L' + q(xFar) + ',' + q(yFar) + ' L' + q(a[0]) + ',' + q(yFar) + ' Z';
+    }
+    /* ── 折线化：按 Catmull-Rom 把控制点采成**密集点列**。
+       色带要沿**法线**等距偏移，而稀疏控制点算不出稳定法线（相邻点离得远，法线跳），
+       密集点列上的中心差分法线才够平滑。per = 每段采样数。 */
+    function poly(pts, closed, vfix, per) {
+      per = per || 14;
+      var n = pts.length, out = [], i, k, t, mt;
+      function at(j) { return closed ? pts[(j % n + n) % n] : pts[Math.max(0, Math.min(n - 1, j))]; }
+      function kv(j) {
+        var a = at(j - 1), b = at(j + 1), mx = (b[0] - a[0]) / 2;
+        return [vfix && vfix[j] ? 0 : mx, (b[1] - a[1]) / 2];
+      }
+      var last = closed ? n : n - 1;
+      for (i = 0; i < last; i++) {
+        var p1 = at(i), p2 = at(i + 1), mi = kv(i), mj = kv(i + 1);
+        var c1 = [p1[0] + mi[0] / 3, p1[1] + mi[1] / 3], c2 = [p2[0] - mj[0] / 3, p2[1] - mj[1] / 3];
+        for (k = 0; k < per; k++) {
+          t = k / per; mt = 1 - t;
+          out.push([mt * mt * mt * p1[0] + 3 * mt * mt * t * c1[0] + 3 * mt * t * t * c2[0] + t * t * t * p2[0],
+                    mt * mt * mt * p1[1] + 3 * mt * mt * t * c1[1] + 3 * mt * t * t * c2[1] + t * t * t * p2[1]]);
+        }
+      }
+      if (!closed) out.push(at(last));
+      return out;
+    }
+
+    /* ── 沿**法线**等距偏移（正 = 向曲线内侧）。
+       背线（吻→尾）内侧朝下、腹线（尾→吻）内侧朝上 —— 同一个 (-dy, dx)/|·| 同时成立，
+       所以两条线都按**自然方向**偏移即可，腹线偏移完再 reverse 成 band 要的「吻→尾」。
+       ⚠️ 旧版色带是「只改 y」的垂直偏移：轮廓陡的地方带子被压薄（厚度随坡度变），
+       吻端那条竖直的边还会**绕到下巴下面**，在脸上切出一道 2.6 宽的竖条。
+       等距偏移让色带与轮廓**处处平行**，宽度只由厚度曲线决定。
+       ⚠️ 几何不变量：等距偏移要求**偏移量 < 该处曲率半径**（内偏 d 后半径 = R − d，
+       d > R 时平行曲线就打尖/自交）。实测当前三款吻端 R≈7、最大偏移 ≈6.5，余量够用，
+       所以**不做钳制**。曾按 0.72·R 钳制过一版：逐路径对比 47 条路径的每个坐标，
+       差异 **0.0000**（纯空转 —— 说明偏移量确实处处小于 R），已删除，不留无实效的机器。
+       若以后把 bellyDip / rimGap / depth 调到接近 R，须回来补钳制；判据：
+       `offsetEdge` 输出在吻端相邻点**不得反向**（即 y 沿线不得出现多余的极值）。 */
+    function offsetEdge(pts, off, closed, vfix, per) {
+      var p = poly(pts, closed, vfix, per), m = p.length, out = [], i;
+      for (i = 0; i < m; i++) {
+        var ia = closed ? (i - 1 + m) % m : Math.max(0, i - 1);
+        var ib = closed ? (i + 1) % m : Math.min(m - 1, i + 1);
+        var dx = p[ib][0] - p[ia][0], dy = p[ib][1] - p[ia][1];
+        var ln = Math.sqrt(dx * dx + dy * dy) || 1;
+        var o = (typeof off === 'function') ? off(i / (m - 1), p[i]) : off;
+        out.push([p[i][0] - dy / ln * o, p[i][1] + dx / ln * o]);
+      }
+      return out;
+    }
+
+    /* ── 单调三次插值（Fritsch–Carlson），用于色带**厚度曲线**。
+       ⚠️ 旧版分段线性：斜率在关键帧处突变 → 色带边缘在 0.28L/0.5L/0.8L 留下折点。
+       用普通 Catmull-Rom 会**过冲**（厚度可能变负 → 色带翻到轮廓外面），所以取单调版。 */
+    function mono(xs, ys) {
+      var n = xs.length, d = [], m = [], i;
+      for (i = 0; i < n - 1; i++) d.push((ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]));
+      m[0] = d[0]; m[n - 1] = d[n - 2];
+      for (i = 1; i < n - 1; i++) m[i] = (d[i - 1] * d[i] <= 0) ? 0 : (d[i - 1] + d[i]) / 2;
+      for (i = 0; i < n - 1; i++) {
+        if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+        var A = m[i] / d[i], Bq = m[i + 1] / d[i], tot = A * A + Bq * Bq;
+        if (tot > 9) { var f = 3 / Math.sqrt(tot); m[i] = f * A * d[i]; m[i + 1] = f * Bq * d[i]; }
+      }
+      return function (x) {
+        if (x <= xs[0]) return ys[0];
+        if (x >= xs[n - 1]) return ys[n - 1];
+        var k = 0; while (k < n - 2 && x > xs[k + 1]) k++;
+        var h = xs[k + 1] - xs[k], t = (x - xs[k]) / h, t2 = t * t, t3 = t2 * t;
+        return (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k] +
+               (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * h * m[k + 1];
+      };
+    }
+
+    /* ── 月牙带（沿法线）：外缘 / 内缘各一条等距线，厚度为参数曲线的函数 →
+       两端自然收口（0 宽度），不会留"贴了一道胶带"的平头。 */
+    function ribbonN(pts, oA, oB, per, vfix) {
+      var a = offsetEdge(pts, oA, false, vfix, per);
+      var b = offsetEdge(pts, oB, false, vfix, per).reverse();
+      return cr(a, false) + ' ' + cr(b, false).replace(/^M/, 'L') + ' Z';
+    }
+    /* 圆润小块（头部高光） */
+    function blob(cx, cy, rx, ry, k) {
+      k = k || 8;
+      var pts = [], i, t;
+      for (i = 0; i < k; i++) { t = i / k * Math.PI * 2; pts.push([cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]); }
+      return cr(pts, true);
+    }
+
+    /* ── 胸鳍：局部桨形（**根端必须宽**，窄根埋进身体只露尖 → 读成爪尖/疣） ─
+       2026-09-22（用户选项2「改细长叶形」）：宽高比 1.37 → **1.86**（长 39 / 最宽 21）。
+       理由：桌面显示倍率 0.48 下旧那片"胖桨"只露 ~12 用户单位 ≈ 6px，读作「肚皮下的小突点」
+       而不像鲸鳍；细长叶形在同一露出量下才读得出是胸鳍。
+       ⚠️ 尖端 x 仍**钉在 37**：build() 里 finTip 用硬编码 37 推下边界，把它改长会让 viewBox
+       裁掉鳍尖（且不报错，只是"那片鳍缺一角"）。
+       ⚠️ 别靠 `rw` 调粗细：rw 只缩 x（g=rw/22），**rw 越小鳍越墩**（长度按 g 缩、厚度按 sc 缩），
+       想细长只能改这张表或放大 rw（但放大 rw 会踩上面那个 37 的旧账）。 */
+    var FIN_LOCAL = [[-2, -9], [11, -10.5], [25, -7], [33, -3], [37, 0], [37, 1.2],
+                     [33, 4.5], [25, 7.5], [11, 9.5], [-2, 9]];
+    function paddle(cx, cy, angDeg, sc, rw) {
+      var k = nf(sc, 1), g = nf(rw, 22) / 22, a = nf(angDeg, 40) * Math.PI / 180;
+      var ca = Math.cos(a), sa = Math.sin(a);
+      var p = FIN_LOCAL.map(function (t) {
+        var x = t[0] * k * g, y = t[1] * k;
+        return [cx + x * ca - y * sa, cy + x * sa + y * ca];
+      });
+      return 'M' + P(p[0]) + ' C' + P(p[1]) + ' ' + P(p[2]) + ' ' + P(p[3]) +
+             ' C' + P(p[4]) + ' ' + P(p[5]) + ' ' + P(p[6]) +
+             ' C' + P(p[7]) + ' ' + P(p[8]) + ' ' + P(p[9]) + ' Z';
+    }
+
+    /* ── 尾鳍：一片宽扁桨 + 尾端浅缺口（缺口 ≤32% 才不会变成金鱼尾） ────── */
+    var TAIL_PTS = [[0, -6], [12, -11], [26, -16.5], [38, -17], [45, -17.3], [48, -13.7], [44, -9.7],
+                    [41, -6.6], [39, -3.4], [38, 0], [39, 3.4], [41, 6.6], [44, 9.7], [48, 13.7],
+                    [45, 17.3], [38, 17], [26, 16.5], [12, 11], [0, 6]];
+    function tailPath(sc, wide) {
+      sc = nf(sc, 1); wide = nf(wide, 1);
+      var p = TAIL_PTS.map(function (t) { return [t[0] * sc, t[1] * sc * wide]; });
+      var d = 'M' + P(p[0]);
+      for (var i = 1; i < p.length; i += 3) d += ' C' + P(p[i]) + ' ' + P(p[i + 1]) + ' ' + P(p[i + 2]);
+      return d + ' Z';
+    }
+
+    /* ── 背鳍：镰刀。**尖端必须在底座靠后处、后缘短而内凹** ──────────────
+         尖端放在底座前段 = 一根竖刺；后缘画成直线 = 鲨鱼鳍。 */
+    function dorsalPath(bx, rootY, h, back, width) {
+      var tip = [bx + width * back, rootY - h];
+      return 'M' + P([bx, rootY + 4]) +
+        ' C' + P([bx + width * 0.10, rootY - h * 0.58]) + ' ' + P([tip[0] - width * 0.26, tip[1] + h * 0.05]) + ' ' + P(tip) +
+        ' C' + P([tip[0] + width * 0.14, tip[1] + h * 0.34]) +
+        ' ' + P([bx + width * 1.04, rootY - h * 0.32]) + ' ' + P([bx + width, rootY + 4]) + ' Z';
+    }
+
+    /* ── 背鳍 (b)：圆钝小鳍 —— 参照**最初版品牌鲸**那枚 ────────────────────
+       最初版头顶那枚是：低、靠前、尖端**圆的**、整体像一枚拇指往斜后方翘。
+       镰刀（上面的 dorsalPath）画不出这个形：它靠两条贝塞尔在尖端硬拼，
+       必然出**尖角**。圆尖只能靠一条闭合的圆滑曲线 —— 用 cr() 穿 6 个点，
+       尖端自然收圆（点数少 → 曲率平滑，不会在尖端鼓成球）。
+       back = 尖端在底座上的位置占比（>0.5 表示往斜后方翘）。 */
+    function dorsalBlob(bx, rootY, h, back, width) {
+      back = nf(back, 0.62);
+      var pts = [
+        [bx, rootY + 4],                                    // 前根（埋进身体）
+        [bx + width * 0.09, rootY - h * 0.60],              // 前缘中段
+        [bx + width * back - h * 0.30, rootY - h * 0.92],   // 尖前肩
+        [bx + width * back, rootY - h],                     // 尖端
+        [bx + width * back + h * 0.26, rootY - h * 0.84],   // 尖后肩
+        [bx + width * 0.94, rootY - h * 0.30]               // 后缘中段
+      ];
+      return cr(pts, true);
+    }
+
+    /* ── 眼罩（虎鲸身份证）：梭形 —— 前尖、后圆。斜椭圆会读成"贴了颗白蛋" ── */
+    function patchPath(cx, cy, len, w, tiltDeg) {
+      var a = nf(tiltDeg, -8) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+      var loc = [[-len / 2, 0], [-len * 0.06, -w / 2], [len * 0.30, -w * 0.34],
+                 [len / 2, 0], [len * 0.30, w * 0.34], [-len * 0.06, w / 2]];
+      var pts = loc.map(function (t) {
+        return [cx + t[0] * ca - t[1] * sa, cy + t[0] * sa + t[1] * ca];
+      });
+      return cr(pts, true);
+    }
+
+    /* ── 由参数派生一个造型 ─────────────────────────────────────────────── */
+    function build(p) {
+      p = p || {};
+      var L = nf(p.L, 150), hT = nf(p.hTop, 26), hB = nf(p.hBot, 36);
+      var hf = nf(p.headFrac, 0.48), melon = nf(p.melon, 0.08);
+      var chin = nf(p.chinLift, 15), stock = nf(p.stockHalf, 5);
+      var snout = nf(p.snout, 0);
+      var height = hT * (1 + melon) + hB;      // 体高 = 背峰到腹底
+
+      /* ① 轮廓控制点。局部坐标：吻端 x=0、尾柄 x=L、基线 y=0 = 尾柄轴。
+            背线（前→后）与腹线（后→前）拼成一个闭合环。
+         ⚠️ **吻端必须是一段"圆弧"而不是一个尖点**：样条在端点的切线由前后邻点
+            决定，若后邻点离得很远（早期版本把额隆放在 0.42L），前脸就成了一条
+            45° 的斜楔 —— 渲染出来是"鸭嘴 / 尖鼻子"。做法：在吻端前后各放一个
+            近邻点（面部前坡 + 下颌前沿），把切线掰成接近竖直，前脸才立得住。 */
+      var noseY    = hB * (snout > 0 ? 0.16 : 0.22);   // 吻端落在嘴线高度（头下 1/3~1/5）
+      var noseTip  = [0, noseY];
+      var faceUp   = [L * 0.02, -hT * 0.46];           // ⚠️ 必须与吻端同 x（±3）→ 切线才竖直
+      var shoulder = [L * 0.115, -hT * 0.84];          // 头前肩
+      var melonPt  = [L * nf(p.melonX, 0.30), -hT * (1 + melon)];   // 额隆峰
+      var headEnd  = [L * (hf * 1.04), -hT * 0.97];
+      var backMid  = [L * 0.72, -hT * 0.89];
+      var backLow  = [L * 0.89, -hT * 0.52];
+      var stockTop = [L, -stock];
+      var top = [];
+      if (snout > 0) {
+        top.push([-snout, noseY - hT * 0.06]);         // 吻突尖
+        top.push([-snout * 0.34, noseY]);              // 吻突上缘
+        top.push([L * 0.04, -hT * nf(p.snoutCrease, 0.34)]);  // 吻后的凹 —— 海豚的脸就在这道凹上（分数越小凹越深）
+      } else {
+        top.push(noseTip, faceUp);
+      }
+      top.push(shoulder, melonPt, headEnd, backMid, backLow, stockTop);
+      /* 腹线：**一条光滑曲线**从尾柄直通吻端，不设"下巴"特征点 ——
+         头 / 身的分界交给大圆顶 + 眼位 + 嘴线去表达；给肚子开豁口只会多出
+         一片挂在嘴下面的白"胡子"（本版第一张渲染图的实测）。 */
+      var bot = [
+        [L, stock],
+        [L * 0.80, hB * 0.94],
+        [L * 0.50, hB],
+        [L * 0.28, hB * 0.74],
+        [L * 0.055, hB * 0.34]
+      ];
+      if (snout > 0) bot.push([-snout * 0.34, noseY + hT * 0.20]);   // 吻突下缘
+      /* 尾柄两侧结点的切线取竖直（top 末点 = 索引 7、bot 首点 = 索引 8）：
+         身体轮廓竖直收进尾柄。不修正时轮廓会外鼓 3.0 个单位、戳出尾柄线 3 单位
+         （实测 max x = 158.06 > L = 155），在尾鳍根上留一个鼓包。 */
+      var vfBody = []; vfBody[7] = 1; vfBody[8] = 1;
+      var body = cr(top.concat(bot), true, vfBody);
+
+      /* ② 嘴线：从吻端沿头前段斜下，末端上翘收一个嘴角（拉满全身 = 香蕉笑） */
+      var mStart = snout > 0 ? -snout * nf(p.mouthAtTip, 0.96) : 0;
+      /* mouthAtTip：嘴线起点离吻尖多近（1 = 顶到尖）。海豚的吻长，嘴顶到尖会
+         把整条吻划开读成裂缝 —— 收进 0.70，只笑在吻部中段。 */
+      var mY0 = noseY;
+      var mEnd = L * nf(p.mouthFrac, 0.34);
+      var drop = hB * nf(p.mouthDrop, 0.30);
+      var hook = hB * nf(p.mouthHook, 0.12);
+      var mouth = [
+        [mStart, mY0],
+        [mStart + (mEnd - mStart) * 0.40, mY0 + drop * 0.70],
+        [mEnd * 0.82, mY0 + drop],
+        [mEnd, mY0 + drop - hook]
+      ];
+      /* ②b 嘴 = **有体积的月牙笑口**（2026-09-22：用户嫌"一条黑线"太难看）。
+         上缘 = 原微笑曲线；下缘 = 同曲线控制点再往下沉 mt（中间最厚、两端收尖）
+         → 闭合成月牙填充。比描边线有厚度有嘴角，读得出"在笑"而不是"划了一道"。 */
+      var mt = hB * nf(p.mouthThick, 0.17);
+      var mouthFill = 'M' + mouth[0][0] + ',' + mouth[0][1] +
+        ' C' + mouth[1][0] + ',' + mouth[1][1] + ' ' + mouth[2][0] + ',' + mouth[2][1] + ' ' + mouth[3][0] + ',' + mouth[3][1] +
+        ' C' + mouth[2][0] + ',' + (mouth[2][1] + mt * 1.15) + ' ' + mouth[1][0] + ',' + (mouth[1][1] + mt) + ' ' + mouth[0][0] + ',' + mouth[0][1] + ' Z';
+
+      /* ③ 三层着色。白腹 = 贴着腹线的一条**楔形带**：吻端厚度→0（带子自然收敛到轮廓上）、
+            体中段最厚、尾柄收回 —— 这样"白肚上缘"天然随身体走，也天然与嘴线不打架。
+         2026-09-28 重做：偏移改**沿法线**、厚度曲线改**单调三次**（详见 PETRIG 里的注释）。 */
+      var dip = hB * nf(p.bellyDip, 0.42);
+      var KX = [0.00, 0.28, 0.50, 0.80, 1.00];                 /* 白肚厚度沿体长的分布 */
+      var KY = [0.00, 0.45, 1.00, 0.78, nf(p.bellyTail, 0.05) * 7];  /* 吻端 0 / 中前段最厚 / 尾柄收回 */
+      var lift = mono(KX, KY);
+      /* ⚠️ 色带的**首点必须落在吻尖、且偏移为 0**。理由：band() 拿「首点的 x」当闭合墙，
+         首点若落在身体**内部**，墙上就露出一条硬直边，而且这条带子**从此不再覆盖吻部**
+         （实测：下巴出现一块直边楔形，白腹/暗缘的左端缩到 x≈10 而不是 0）。
+         旧版靠「只改 y」的垂直偏移碰巧把首点推到轮廓外，纯属巧合 —— 改成沿法线偏移后
+         这个巧合消失，必须显式保证。做法：① 腹线补上吻尖这一点（几何上腹线与背线
+         本来就在吻尖相接）；② 厚度曲线在前段淡入（吻尖处厚度为 0）。
+         自然方向是「尾 → 吻」，而 (-dy,dx) 法线在此正好指向体内 →
+         先偏移再 reverse，得到 band 要求的「吻 → 尾」顺序。 */
+      var botLine = bot.concat([[0, noseY]]);
+      function fadeIn(xf, w) { var u = Math.min(1, Math.max(0, xf / w)); return u * u * (3 - 2 * u); }
+      var bellyEdge = offsetEdge(botLine, function (t, pt) {
+        return dip * lift(pt[0] / L);
+      }, false, null, 14).reverse();
+      var litEdge = offsetEdge(top, function (t, pt) {
+        return nf(p.litInset, 2.6) * fadeIn(pt[0] / L, 0.10);   /* 吻端收口，不长成针尖 */
+      }, false, null, 14);
+      var xFar = L + nf(p.tailLen, 48) + 40;
+      var lit   = band(litEdge, xFar, -999);
+      var belly = band(bellyEdge, xFar, 999);
+      var rim   = band(offsetEdge(botLine, function (t, pt) {
+        return (dip * lift(pt[0] / L) + nf(p.rimGap, 4)) * fadeIn(pt[0] / L, 0.05);
+      }, false, null, 14).reverse(), xFar, 999);
+      /* ⑤b 背影（twoTone）：海豚计数阴影 —— 分界线以上压暗。top 已按 x 左→右排
+         （band 的硬规矩），分界深度走 KX/KY 关键帧：吻端浅 → 体中段最深 → 尾柄收浅。
+         depth 是全局倍率（1 = 默认曲线），调阴影轻重只动它。 */
+      var back = null, backCls = 'ft-pet-back';
+      if (p.twoTone) {
+        /* TX/TY 可被参数覆盖：TY = 分界线深度（占 hT 比例，随 x 左→右）。
+           熊猫肩带曲线（calf 覆盖）：吻端留白 → 肩/体中段最深 → 尾柄收浅，
+           读作「黑背甲披在白身上」，与黑鳍黑尾黑眼罩拼成完整熊猫装。 */
+        var TX = p.twoTone.TX || [0.00, 0.30, 0.55, 0.85, 1.00];
+        var TY = p.twoTone.TY || [0.10, 0.40, 0.52, 0.38, 0.20];
+        if (p.twoTone.style === 'ink') backCls = 'ft-pet-back-ink';
+        var backAt = mono(TX, TY);
+        back = band(offsetEdge(top, function (t, pt) {
+          var xf = pt[0] / L;
+          return hT * nf(p.twoTone.depth, 1) * backAt(xf) * fadeIn(xf, 0.05);
+        }, false, null, 14), xFar, -999);
+      }
+
+      /* ④ 受光：沿背线一道**法线等距**月牙。厚度曲线 = sin 两端收尖 × 头部一个高斯鼓包。
+         ⚠️ 旧版是「细月牙 ∪ 头部椭圆」两个子路径并集：两形状相交处必然出现一个凹口，
+         在桌面上读成「蹭了一块污渍」。合成**一条**厚度曲线后不再有相交接缝。 */
+      var si = nf(p.sheenIn, 5.5), so = nf(p.sheenOut, 11);
+      var sA = nf(p.sheenFrom, 0.055), sB = nf(p.sheenTo, 0.93);
+      var gx = nf(p.glintX, 0.235), gw = nf(p.glintW, 0.085), ga = nf(p.glintAmp, 1.05);
+      var sheenW = function (xf) {
+        if (xf <= sA || xf >= sB) return 0;
+        var u = (xf - sA) / (sB - sA), e = (xf - gx) / gw;
+        return Math.pow(Math.sin(Math.PI * u), 0.62) * (1 + ga * Math.exp(-e * e));
+      };
+      var sheen = ribbonN(top, function (t, pt) { return si * sheenW(pt[0] / L); },
+                               function (t, pt) { return so * sheenW(pt[0] / L); }, 16);
+
+      /* ⑤ 背鳍 / 眼罩 */
+      var dorsal = null, rootY = -hT * 0.95, bh = 0;
+      if (p.dorsal) {
+        bh = nf(p.dorsal.h, 32);
+        if (bh <= 1) bh = height * bh;                       // 占比写法
+        var bw = nf(p.dorsal.width, 0.15);
+        if (bw <= 1) bw = L * bw;
+        /* style: 'sickle' = 对齐 AppIcon 图标的低矮后掠镰刀（带后缘凹口），三款现用；
+                  'round' = 旧版小圆鳍（已弃用，留作回退）。*/
+        dorsal = (p.dorsal.style === 'sickle')
+          ? dorsalPath(L * nf(p.dorsal.base, 0.45), rootY, bh,
+                       nf(p.dorsal.back, 0.85), bw)
+          : dorsalBlob(L * nf(p.dorsal.base, 0.45), rootY, bh,
+                       nf(p.dorsal.back, 0.62), bw);
+      }
+      /* 身份标记层（adds）：虎鲸眼罩/体侧斑、幼鲸腮红都挂这里 —— 画在裁剪组
+         之后的体侧上层，不跟受光/肚白层抢位置。空数组回退成 null（旧约定）。 */
+      var adds = [];
+      if (p.patch) {
+        adds.push({ el: 'path', cls: 'ft-pet-patch', attrs: { d: patchPath(
+          L * nf(p.patch.x, 0.30), -hT * nf(p.patch.y, 0.40),
+          L * nf(p.patch.len, 0.28), hT * nf(p.patch.w, 0.32), nf(p.patch.tilt, -8)) } });
+      }
+      if (p.blush) {
+        adds.push({ el: 'path', cls: 'ft-pet-blush', attrs: { d: blob(
+          L * nf(p.blush.x, 0.15), -hB * nf(p.blush.y, 0.10),
+          L * nf(p.blush.rx, 0.05), hB * nf(p.blush.ry, 0.11), 8) } });
+      }
+      if (p.panda) {
+        /* 熊猫眼罩：斜梭形黑带罩住眼位，尺寸跟眼径走（len/w ≈ 3.2/3.0 · er），
+           中心略抬高避开嘴线（adds 画在嘴上层，罩住嘴 = 笑容被吞）。 */
+        var per = height * nf(p.eyeR, 0.135);
+        adds.push({ el: 'path', cls: 'ft-pet-ink-fill', attrs: { d: patchPath(
+          L * nf(p.eyeX, 0.20), -hT * nf(p.eyeY, 0.52) - height * 0.02,
+          per * 3.2, per * 3.0, -16) } });
+      }
+      if (!adds.length) adds = null;
+
+      /* ⑥ 胸鳍：根端埋进身体，探出的是"有宽基的半片桨" */
+      var finSc = nf(p.finSc, 1), finAng = nf(p.finAng, 40);
+      var fp = [L * nf(p.finX, 0.27), hB * nf(p.finY, 0.26)];
+      var fin = paddle(fp[0], fp[1], finAng, finSc, nf(p.finRootW, 22));
+      var fa = finAng * Math.PI / 180;
+      /* ⚠️ 尖端距离 = 37 × finSc × g（g = finRootW/22，paddle 里 x 额外乘 g）。旧代码漏了 g：
+         g>1 时低估 → viewBox 下界偏小 → **鲍尖被裁掉**（不报错，只是"那片鲍缺一角"）。 */
+      var gN = nf(p.finRootW, 22) / 22;
+      var finTip = [fp[0] + 37 * finSc * gN * Math.cos(fa), fp[1] + 37 * finSc * gN * Math.sin(fa)];
+
+      /* ⑥2 远侧胸鳍（用户：「鱼鳍是不是两侧都要」）────────────────────────
+         方案是**两片鳍都在腹线以下、前后错开**：近侧那片靠前、大、亮；远侧那片
+         贴着它略靠后、小 16%、暗一档。这是侧视下"两侧都长鳍"最省事也最不出错的
+         投影 —— 试过的另一版是让远侧鳍**从背线上探出来**（过体轴镜像、角度取负），
+         渲染出来是"头上多一块暗片"，跟背鳍抢位置，像贴错的东西（变体板 (B) 那一格）。
+         根端仍埋在身体里 → 被身体底板盖住，接缝天然不存在。
+         颜色更暗（.ft-pet-fin-far）+ 更小 → 有远近层次，不会读成"两片一样的鳍"。 */
+      var farAng = nf(p.finFarAng, finAng + 14);
+      var farSc  = nf(p.finFarSc, finSc * 0.70);
+      var fpr = [L * nf(p.finFarX, nf(p.finX, 0.27) * 1.26),
+                 hB * nf(p.finFarY, 0.28)];
+      /* finFar: false = 不要远侧鳍（留退路：只留一片的版本随时能回）*/
+      var finFar = (p.finFar === false) ? null
+                 : paddle(fpr[0], fpr[1], farAng, farSc, nf(p.finFarRootW, nf(p.finRootW, 22) * 0.9));
+      var ffa = farAng * Math.PI / 180;
+      var gF = nf(p.finFarRootW, nf(p.finRootW, 22) * 0.9) / 22;
+      var finFarTip = [fpr[0] + 37 * farSc * gF * Math.cos(ffa), fpr[1] + 37 * farSc * gF * Math.sin(ffa)];
+
+      /* ⑦ 眼睛：尺寸由"占体高的比例"推出来（宠物感的第一要素，别手填绝对值） */
+      var er = height * nf(p.eyeR, 0.135);
+      var eye = { x: L * nf(p.eyeX, 0.20), y: -hT * nf(p.eyeY, 0.52), r: er,
+                  g1: { dx: -er * 0.34, dy: -er * 0.36, r: er * 0.28 },
+                  g2: { dx: er * 0.30, dy: er * 0.30, r: er * 0.13 } };
+
+      /* ⑧ 咀嚼时的张嘴椭圆，挂在嘴线 40% 处 */
+      var mrx = hB * nf(p.mouthRx, 0.15);
+      var mouthO = { x: mouth[1][0], y: mouth[1][1] + 1.5, rx: mrx, ry: mrx * 0.82, w: nf(p.mouthW, 2.8) };
+
+      /* ⑨ 视口与显示尺寸：由实际包围盒算，别手填 */
+      var tl = nf(p.tailLen, 48);
+      var bx0 = Math.min(0, -snout) - 12;
+      var bx1 = L + tl + 8;
+      var by0 = Math.min(-hT * (1 + melon), p.dorsal ? rootY - bh : 0) - 14;
+      /* ⚠️ 下界**必须**含远侧鳍的尖端：它往腹线下面探，漏掉就会被 viewBox 裁掉
+         —— 但页面上不报错，只是"那片鳍缺了一角"。 */
+      var by1 = Math.max(hB, finTip[1] + 12, finFar ? finFarTip[1] + 10 : 0) + 16;
+      var K = nf(p.scale, 0.86);
+      var petW = Math.round((bx1 - bx0) * K), petH = Math.round((by1 - by0) * K);
+
+      /* ⑩ 量出来的指标（供 PETRIG.audit 判据 + 扫描台对比用） */
+      function botAt(x) {
+        var s = bot.slice().sort(function (a, b) { return a[0] - b[0]; });
+        if (x <= s[0][0]) return s[0][1];
+        for (var i = 1; i < s.length; i++) {
+          if (x <= s[i][0]) {
+            var k = (x - s[i - 1][0]) / Math.max(1e-6, s[i][0] - s[i - 1][0]);
+            return s[i - 1][1] + (s[i][1] - s[i - 1][1]) * k;
+          }
+        }
+        return s[s.length - 1][1];
+      }
+      /* 背线插值（与 botAt 同一套）—— 用来量「远侧胸鳍探出背线多少」 */
+      function topAt(x) {
+        var s2 = top.slice().sort(function (a, b) { return a[0] - b[0]; });
+        if (x <= s2[0][0]) return s2[0][1];
+        for (var i2 = 1; i2 < s2.length; i2++) {
+          if (x <= s2[i2][0]) {
+            var k2 = (x - s2[i2 - 1][0]) / Math.max(1e-6, s2[i2][0] - s2[i2 - 1][0]);
+            return s2[i2 - 1][1] + (s2[i2][1] - s2[i2 - 1][1]) * k2;
+          }
+        }
+        return s2[s2.length - 1][1];
+      }
+      var expose = 0;
+      for (var e = 0; e <= 8; e++) {
+        var xx = fp[0] + (finTip[0] - fp[0]) * (e / 8);
+        var yy = fp[1] + (finTip[1] - fp[1]) * (e / 8);
+        expose = Math.max(expose, yy - botAt(xx));
+      }
+      /* 远侧鳍的"看得出"判据：它往**腹线以下**探出多少（与近侧鳍的 expose 同一套算法）。
+         正 = 探出肚子下方。 */
+      /* 背鳍：尖端必须**真的露在背线以上**。埋在身体里的背鳍在页面上完全看不出来
+         （只是"背上多了一块同色的东西"，被身体底板盖住），但 DOM 里节点齐全、不报错。 */
+      var dorsalOut = 0;
+      if (dorsal) {
+        var dTipX = L * nf(p.dorsal.base, 0.45) + bw * nf(p.dorsal.back, 0.62);
+        dorsalOut = topAt(dTipX) - (rootY - bh);
+      }
+      var farOut = 0;
+      for (var g = 0; finFar && g <= 8; g++) {
+        var gx = fpr[0] + (finFarTip[0] - fpr[0]) * (g / 8);
+        var gy = fpr[1] + (finFarTip[1] - fpr[1]) * (g / 8);
+        farOut = Math.max(farOut, gy - botAt(gx));
+      }
+      var B = {
+        key: p.key || '', name: (typeof p.name === 'string' && p.name) ? p.name : '未命名',
+        vb: [bx0, by0, bx1 - bx0, by1 - by0].map(function (v) { return Math.round(v * 10) / 10; }).join(' '),
+        petW: petW, petH: petH,
+        body: body, lit: lit, belly: belly, rim: rim, back: back, backCls: backCls, tint: p.tint || null, panda: !!p.panda,
+        mouth: cr(mouth, false), mouthFill: mouthFill, mouthO: mouthO,
+        sheen: sheen, dorsal: dorsal, adds: adds,
+        fin: fin, fp: [fp[0], fp[1]], tp: [L, 0],
+        finFar: finFar, ffp: finFar ? [fpr[0], fpr[1]] : null,
+        tailD: tailPath(nf(p.tailScale, 1), nf(p.tailWide, 1.12)),
+        bc: [L * 0.49, -hT * 0.20],
+        eye: eye,
+        _m: {
+          L: L, height: height, aspect: L / height,
+          eyeRatio: 2 * er / height, finRootW: nf(p.finRootW, 22),
+          finExposed: expose, tailStep: Math.abs(stock - 6),
+          dorsalOut: dorsalOut, finFarOut: farOut,
+          farScRatio: farSc / Math.max(0.01, finSc),
+          mouthFrac: nf(p.mouthFrac, 0.34), heightK: L / height
+        }
+      };
+      /* build()/render() 读的是对象形式（.x/.y），这里统一转一次，
+         免得"数组还是对象"在生成期埋雷、运行时才炸成 undefined */
+      B.bc = { x: B.bc[0], y: B.bc[1] };
+      B.tp = { x: B.tp[0], y: B.tp[1] };
+      B.fp = { x: B.fp[0], y: B.fp[1] };
+      if (B.ffp) B.ffp = { x: B.ffp[0], y: B.ffp[1] }; else delete B.ffp;
+      if (B.finFar === null) delete B.finFar;
+      if (B.dorsal === null) delete B.dorsal;
+      if (B.adds === null) delete B.adds;
+      return B;
+    }
+
+    /* ── 几何不变量：这几条错一条，远看就不是鲸／不像宠物 ───────────────── */
+    function audit(t) {
+      var out = [];
+      function bad(k, s) { out.push(k + ': ' + s); }
+      for (var k in t) {
+        if (!t.hasOwnProperty(k)) continue;
+        var B = t[k], m = B._m;
+        if (m.aspect < 2.15) bad(k, '体长比 ' + m.aspect.toFixed(2) + ':1 < 2.15（远看是豆子/充气玩具）');
+        if (m.aspect > 3.35) bad(k, '体长比 ' + m.aspect.toFixed(2) + ':1 > 3.35（像鳗鱼）');
+        if (m.eyeRatio < 0.245) bad(k, '眼径占体高 ' + (m.eyeRatio * 100).toFixed(1) + '% < 24.5%（像鱼不像宠物）');
+        if (m.finRootW < 18) bad(k, '胸鳍根宽 ' + m.finRootW + ' < 18（埋进身体只露尖 → 像爪尖）');
+        if (m.finExposed < 6) bad(k, '胸鳍探出 ' + m.finExposed.toFixed(1) + ' < 6（看不见）');
+        if (m.finExposed > 26) bad(k, '胸鳍探出 ' + m.finExposed.toFixed(1) + ' > 26（像腿）');
+        if (m.dorsalOut < 6) bad(k, '背鳍露出背线 ' + m.dorsalOut.toFixed(1) + ' < 6（等于没长背鳍）');
+        if (m.dorsalOut > 34) bad(k, '背鳍露出背线 ' + m.dorsalOut.toFixed(1) + ' > 34（比头还高，像鲨鱼）');
+        if (m.tailStep > 2.5) bad(k, '尾柄台阶 ' + m.tailStep.toFixed(1) + ' > 2.5（接口有可见断差）');
+        if (B.finFar) {
+          if (m.finFarOut < 4) bad(k, '远侧胸鳍探出腹线 ' + m.finFarOut.toFixed(1) + ' < 4（看不见 → 还是只有一片鳍）');
+          if (m.finFarOut > 26) bad(k, '远侧胸鳍探出腹线 ' + m.finFarOut.toFixed(1) + ' > 26（像腿）');
+          if (m.farScRatio > 1.0) bad(k, '远侧胸鳍比近侧还大（尺度比 ' + m.farScRatio.toFixed(2) + ' > 1）→ 抢戏、读成两片主鳍');
+        }
+        if (m.mouthFrac > 0.45) bad(k, '嘴线占体长 ' + m.mouthFrac.toFixed(2) + ' > 0.45（香蕉笑）');
+        ['body', 'lit', 'belly', 'back', 'rim', 'mouth', 'fin', 'finFar', 'dorsal', 'sheen', 'tailD'].forEach(function (f) {
+          if (!B[f]) return;
+          dErrors(B[f]).forEach(function (e) { bad(k + '.' + f, e); });
+        });
+        (B.adds || []).forEach(function (a, i) {
+          if (a.attrs && a.attrs.d) dErrors(a.attrs.d).forEach(function (e) { bad(k + '.adds' + i, e); });
+        });
+      }
+      return out;
+    }
+
+    function report(t) {
+      var parts = [];
+      for (var k in t) {
+        if (!t.hasOwnProperty(k)) continue;
+        var m = t[k]._m;
+        /* 背鳍露出量也带上：调背鳍（位置/高度）时它是唯一的客观依据，
+           而它只在越界时才出现在 audit 的消息里 —— 调参当场看不到数。 */
+        parts.push(k + ' ' + m.aspect.toFixed(2) + ':1 眼' + Math.round(m.eyeRatio * 100) +
+                   '% 桨根' + Math.round(m.finRootW) + ' 露出' + Math.round(m.finExposed) +
+                   ' 背鳍' + m.dorsalOut.toFixed(1) + ' 尾阶' + m.tailStep.toFixed(1));
+      }
+      return parts.join(' | ');
+    }
+
+    function buildAll(params) {
+      var out = {};
+      for (var k in params) if (params.hasOwnProperty(k)) {
+        var p = params[k];
+        p.key = k; p.name = p.name || k;
+        out[k] = build(p);
+      }
+      return out;
+    }
+
+    return { build: build, buildAll: buildAll, audit: audit, report: report,
+             dErrors: dErrors, tailPath: tailPath, cr: cr, blob: blob };
+  })();
+
+  /* ── 三款造型的**参数**（唯一需要手改的地方；路径全部由 PETRIG 派生） ──────
+       比例硬规矩：体长:体高 ≥ 2.2:1（鲸是横长条）；眼径 ≥ 体高 25%；
+       嘴线只走头的前 34%；胸鳍根端宽 22、探出 6~26。audit() 会逐条卡。 */
+  var BREED_PARAMS = {
+    calf: {
+      name: '圆胖幼鲸', L: 155, hTop: 31, hBot: 25, headFrac: 0.50, melon: 0.17,
+      chinLift: 15, stockHalf: 5, snout: 0,
+      mouthFrac: 0.34, mouthDrop: 0.16, mouthHook: 0.10, mouthW: 2.9,
+      bellyDip: 0.56, bellyTail: 0.05, rimGap: 4, litInset: 2.6,
+      sheenIn: 6, sheenOut: 10, glintX: 0.235, glintW: 0.085, glintAmp: 1.05,
+      eyeR: 0.135, eyeX: 0.23, eyeY: 0.26,
+      /* 熊猫配色（2026-09-22 用户指定）：白身（tint 只注 SVG 内联变量，UI 仍吃
+         皮肤色）+ panda 标志把鳍/尾/背鳍全换墨色、眼位罩黑斑、瞳孔垫白底。
+         旧奶油 tint / 腮红随本次弃用。 */
+      tint: '#f7f4ec', panda: true,
+      /* 熊猫背甲（2026-09-22 用户：「身上再加一些黑色区域」）：twoTone 走 ink 模式
+         —— 分界线以上披实墨色。肩带曲线 TX/TY 自定义：吻端浅（脸保持白）→
+         肩/体中段最深（黑带绕过背线探到腹线上沿，= 熊猫肩带）→ 尾柄收浅
+         （后背留白，与墨色尾鳍形成一截白腰，黑尾不糊成一整片）。 */
+      twoTone: { style: 'ink', depth: 1, TY: [0.08, 0.62, 0.88, 0.74, 0.30] },
+      /* 胸鳍 = 真实鱼画法：**近侧鳍贴在身体侧面上（画在身体上层，见 build）**，
+         根在肩部（鳃后、体侧 y≈hB·0.30），朝下后扫（55°），鳍短（sc 0.85）——
+         鳍尖只落到腹线略下（探出 ~8），鳍身大部分盖在体侧上。
+         旧版 finSc 1.50 + 鳍在身体底层 → 整片被迫垂到肚子下面 = 残疾鱼。 */
+      finX: 0.38, finY: 0.30, finAng: 55, finSc: 0.85, finRootW: 21,
+      /* 背鳍 = 圆钝拇指鳍（dorsalBlob，品牌鲸幼态那枚的参数化版）：低、紧挨头后、
+         尖端圆、往斜后方翘（back .58）。幼鲸配后勾镰刀 = 气质打架；圆鳍才是
+         「圆胖」的收官一笔（露背线 ~21 用户单位，audit 达标）。 */
+      dorsal: { base: 0.42, h: 22, back: 0.58, width: 0.21, style: 'round' },
+      /* 远侧胸鳍 = 另一侧那片，画在身体**底层**：根藏在身体里（0.30/0.55，近腹线），
+         只从腹线下面露出一个小暗尖（探出 ~6），位置紧挨近侧鳍尖之后。
+         真实侧视图里远侧鳍就是这么一点若隐若现——不是又一片大鳍。 */
+      finFarX: 0.44, finFarY: 0.55, finFarAng: 60, finFarSc: 0.80, finFarRootW: 14,
+      tailLen: 48, scale: 0.55
+    },
+    orca: {
+      name: '虎鲸', L: 162, hTop: 30, hBot: 24, headFrac: 0.46, melon: 0.12,
+      chinLift: 14, stockHalf: 5, snout: 0,
+      mouthFrac: 0.33, mouthDrop: 0.15, mouthHook: 0.10, mouthW: 2.7,
+      bellyDip: 0.48, bellyTail: 0.05, rimGap: 4, litInset: 2.6,
+      sheenIn: 6, sheenOut: 10, glintX: 0.225, glintW: 0.085, glintAmp: 1.05,
+      eyeR: 0.135, eyeX: 0.22, eyeY: 0.24,
+      /* 胸鳍 = 贴在体侧（画在身体上层）：根在肩部（0.23/0.28），朝下后扫 52°，
+         finSc 1.00（虎鲸胸鳍本来就是鲸类里最大的桨，但也只到腹线略下） */
+      finX: 0.36, finY: 0.28, finAng: 52, finSc: 1.00, finRootW: 22,
+      /* 虎鲸背鲍是鲸类里最高的（露出比幼鲸多 ~20%）、更接近三角；base 0.40 紧挨头后 */
+      dorsal: { base: 0.40, h: 30, back: 0.82, width: 0.175, style: 'sickle' },
+      /* 远侧胸鳍：身体底层小暗尖，紧挨近侧鳍之后从腹线探出 ~7 */
+      finFarX: 0.42, finFarY: 0.52, finFarAng: 60, finFarSc: 0.78, finFarRootW: 15,
+      patch: { x: 0.35, y: 0.28, len: 0.30, w: 0.40, tilt: -6 },
+      tailLen: 48, scale: 0.54
+    },
+    clockwork: {
+      /* 发条鲸（2026-09-23 用户点名）：**整条鱼由 AI 生图提供**（以 app 图标那枚
+         品牌鲸为形 —— 青蓝渐变 + 金描边 + 黄铜齿轮），几何在这里只当「骨架底座」：
+         身体/鳍/尾/眼全被图盖住并隐藏，剩下的作用是指挥呼吸、摆浪与摆尾。
+         参数照 calf（圆胖鲸比例，与图标同款体态）—— 图里的鱼就是圆胖鲸。
+         ⚠️ 换造型（幼鲸/虎鲸）不受影响：位图只在 BREED==='clockwork' 时挂载。 */
+      name: '河道之灵', L: 160, hTop: 29, hBot: 24, headFrac: 0.48, melon: 0.16,
+      chinLift: 15, stockHalf: 5, snout: 0,
+      mouthFrac: 0.32, mouthDrop: 0.16, mouthHook: 0.10, mouthW: 2.8,
+      bellyDip: 0.54, bellyTail: 0.05, rimGap: 4, litInset: 2.5,
+      sheenIn: 6, sheenOut: 10, glintX: 0.235, glintW: 0.085, glintAmp: 1.05,
+      eyeR: 0.135, eyeX: 0.23, eyeY: 0.26,
+      finX: 0.38, finY: 0.30, finAng: 55, finSc: 0.85, finRootW: 21,
+      dorsal: { base: 0.42, h: 22, back: 0.58, width: 0.21, style: 'round' },
+      finFarX: 0.44, finFarY: 0.55, finFarAng: 60, finFarSc: 0.80, finFarRootW: 14,
+      tailLen: 48, scale: 0.55
+    }
+  };
+
+  /* 尾鳍：三款共用（scale 1 = 长 48 / 半宽 17 / 缺口 21%） */
+  var TAIL_D = PETRIG.tailPath(1);
+
+  /* 由参数派生（**勿手改这里的产物**，改上面的 BREED_PARAMS） */
+  var BREEDS = PETRIG.buildAll(BREED_PARAMS);
+  window.ftRig = PETRIG;
+  window.ftBreedParams = BREED_PARAMS;
+  window.ftRigReport = function () { return PETRIG.report(BREEDS); };
+  window.ftRigAudit = function () {
+    var a = PETRIG.audit(BREEDS);
+    return a.length ? a.join(' ; ') : 'OK';
+  };
+  /* 开发用：拿一组参数**就地重建**（变体板/扫描台靠它，不必改文件重载）。
+     ⚠️ 只改当前会话的内存，不落盘 —— 定稿仍必须写回 BREED_PARAMS。
+     参数对象按 breed 名合并（只需给要改的那几个键）。 */
+  window.ftRigRebuild = function (over, keep) {
+    var base = BREED_PARAMS, merged = {};
+    for (var k in base) if (base.hasOwnProperty(k)) {
+      var src = base[k], dst = {};
+      for (var f in src) if (src.hasOwnProperty(f)) dst[f] = src[f];
+      if (over && over[k]) for (var g in over[k]) if (over[k].hasOwnProperty(g)) dst[g] = over[k][g];
+      if (!dst.key) dst.key = k;
+      merged[k] = dst;
+    }
+    BREEDS = PETRIG.buildAll(merged);
+    if (keep && BREEDS[keep]) BREED = keep;
+    build();
+    return PETRIG.report(BREEDS);
+  };
+  var rigBad = PETRIG.audit(BREEDS);
+  if (rigBad.length) console.warn('PETRIG audit: ' + rigBad.join(' ; '));
+
+  var BREED = 'calf';
+  var VBN = [30, 28, 132, 116];          // 当前 viewBox 数值（映射用）
+  var PET_W = 138, PET_H = 89;           // 初值；build() 里按造型表的 petW/petH 覆写
+  var HZ_DRIFT = 0.148;
+
+  /* ── 状态 ───────────────────────────────────────────────────────────── */
+  var P = {
+    x: 0, y: 0, vx: 0, vy: 0, heading: 0, speed: 0,
+    tx: 0, ty: 0, restUntil: 0,
+    phBreath: 0, phTail: 0, phFin: 0, phDrift: 0,
+    driftX: 0, driftY: 0, driftTx: 0, driftTy: 0,
+    blink: 1, nextBlink: 0, flip: 1, t: 0, dt: 0.016,
+    jelly: 0, jellyV: 0, hopY: 0, hopV: 0,
+    drag: false, grabX: 0, grabY: 0, downAt: 0, moved: 0,
+    lastInteract: 0, lastClickAt: 0,
+    face: 1, pitch: 0, sway: 0, side: 0, sideWant: 0, sideOn: false, chaseUntil: 0,
+    chewing: false, chewUntil: 0, mouthOpen: 0,
+    asleep: false, tame: 0, work: '',
+    /* ── 沿用旧鲸鱼（alive.js v4）的内部状态与行为节目 ──
+       有个性 = 会累、会腻、会拒绝你，不是有求必应的按钮。 */
+    stamina: 1, arousal: 0.35, bored: 0.15, mood: 'calm',
+    mode: 'roam', lastPlay: '', actUntil: 0, nextPlay: 0,
+    attn: 0, attnAt: 0, attnHold: 0, attnPlan: '', fleeUntil: 0,
+    petting: false, petRefuseUntil: 0, heartAt: 0, zAt: 0
+  };
+  var mouse = { x: -9999, y: -9999, active: false, at: -1e9 };
+  var env = { light: false, bubble: null, bubbleUntil: 0 };
+  var lastReportAt = 0;
+  var W = window.innerWidth, H = window.innerHeight;
+  var stage = document.getElementById('ft-pet-layer');
+  var petEl = document.getElementById('ft-pet');
+  var zoneEl = document.getElementById('ft-dp-dropzone');
+  var shadowEl = null, haloEl = null, liftEl = null, squashEl = null, rollEl = null;
+  var tailG = null, breatheG = null, bendG = null, finG = null, finFarG = null,
+      faceG = null, eyeG = null;
+  var lastT = 0, fpsAcc = 0, fpsN = 0, fps = 60;
+
+  /* 所有进 transform 的数字必须过这里：NaN / Infinity 走到 CSSOM 会被静默
+     丢弃，不报错、style 保持空 —— 外部查不出来，但那一层就死了。 */
+  function num(v, d) {
+    v = (typeof v === 'number') ? v : parseFloat(v);
+    if (!isFinite(v)) return (typeof d === 'number' ? d : 0);
+    return v;
+  }
+  function now() { return performance.now(); }
+
+  /* ── 功率档位（2.23.0 建 / 2.23.7 改）──────────────────────────────────
+     由来：60fps 无脑 render 曾是空闲时最大单项开销（≈12% 单核），故设三档自治。
+     ★ 2.23.7（用户 2026-09-23 定）：**取消自动降档** —— 皮肤那 4 条背景动画改静态
+     之后整机开销已大降，鱼在桌面上时全程 full 帧率（观感优先，不必再牺牲流畅度）。
+     三档与 window.ftPower() 外部接口全部保留（eco 仍可被外部手动点火），只是
+     「没人理就自己降档」这条自治规则删掉了：
+       full —— 每帧（**桌面上的默认态：一直跑**）
+       eco  —— 最低帧间隔 1/22s、整帧跳过（物理按真实 dt 补回，行为不变；睡着时
+               1/12s）。2.23.7 起不再自动进入，仅 ftPower('eco') 可达
+       rest —— 不排 rAF：页面对系统彻底静默。**只保留给出「鱼游回灵动岛、
+               桌面上看不见它」这一种情况** —— 看不见的东西没有理由渲染
+     自治只留「行为」不再降帧率：没人理 60s → 就地打盹；150s → 自己游回岛里睡
+     （到达即 rest）。任何交互（拖/摸/喂/靠近/对答/气泡）都会 powerWake() 拉回 full。 */
+  var POWER = { level: 'full', lastRun: 0, idleAt: 0, tripAt: 0 };
+  var ECO_MS = 1000 / 22;
+  var DOZE_MS = 1000 / 12;
+  var IDLE_DOZE_MS = 60000;     // 无交互 → 就地打盹
+  var IDLE_TRIP_MS = 150000;    // 无交互 → 游回灵动岛（到家即 rest 档）
+  var frameArmed = false;       // 是否已有下一帧在排队（防止 rest→full 重复点火）
+  var powerLog = [];            // 档位变更留痕（ftState.powerLog 可查，实测核对用）
+
+  function armFrame() {
+    if (frameArmed) return;
+    frameArmed = true;
+    requestAnimationFrame(frame);
+  }
+  function powerSet(level) {
+    if (POWER.level === level) return;
+    var was = POWER.level;
+    POWER.level = level;
+    if (level === 'full') {
+      lastT = 0;                 // 停帧后重启：别让 dt 吃到几分钟的空档
+      POWER.lastRun = 0;
+      armFrame();                // rest → full 必须重新点火（rest 期间队列是空的）
+    }
+    powerLog.push(Math.round(now()) + ':' + was + '>' + level);
+    if (powerLog.length > 12) powerLog.shift();
+    try { report('power', { level: level, from: was }); } catch (e) {}
+  }
+  function powerWake() {
+    POWER.idleAt = now();
+    if (POWER.level !== 'full') powerSet('full');
+  }
+
+  /* 空闲自治：每帧一趟（纯比较，开销可忽略），决定降档 / 打盹 / 回岛。 */
+  function idleTick(t) {
+    var talking = !!(FS && FS.state && FS.state !== 'idle');
+    var bubble = !!(env.bubble && t < env.bubbleUntil);
+    /* busy = 真交互（必须全速）；userHere = 鼠标在鱼身边（有人在看它 → 别跑掉） */
+    var busy = !!(P.drag || P.menuOpen || talking || bubble || (t - (P.lastInteract || 0) < 1500));
+    var userHere = !!P.near;
+    if (busy || userHere) {
+      POWER.idleAt = t;
+      if (busy) powerSet('full');
+    }
+    if (POWER.level === 'rest') return;
+    var idle = t - POWER.idleAt;
+    /* 2.23.7：此处原为「25s 无交互 → powerSet('eco')」，已删（桌面上的鱼全程 full）。
+       eco / IDLE_ECO_MS 一并停用；要手动降档仍可 ftPower('eco')。 */
+    /* 没人理到 60s：就地打盹 */
+    if (idle > IDLE_DOZE_MS && !P.asleep && !P.islandGo && !P.cageIn && !P.drag && !bubble) {
+      P.asleep = true;
+      P.sleepUntil = t + rnd(45000, 110000);   // 睡到点自己醒，或被摸醒
+      P.tx = P.x; P.ty = P.y; P.speed = 0;
+    }
+    /* 没人理到 150s：自己游回灵动岛睡（到达分支会进 rest 档 —— 那时它彻底不占资源）*/
+    if (idle > IDLE_TRIP_MS && !userHere && !busy && !P.islandGo && !P.cageIn &&
+        !P.hidden && now() > (P.islandCd || 0)) {
+      POWER.tripAt = t;
+      P.asleep = false;                        // 先醒，游回去再睡
+      P.islandGo = true; P.restUntil = 0;
+      P.tx = clamp(W / 2 - PET_W / 2, bounds().l, bounds().r);
+      P.ty = 4;
+    }
+  }
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  /* ── 活动空间：整个桌面，但随机巡游时主轴偏下半屏与两侧 ───────────────── */
+  /* 穹顶内表面：罩子上半是**拱**（上半椭圆），不是矩形。
+     2.23.7 之前笼内边界按矩形算 → 鱼游到两侧靠顶时头顶直接穿出弧线，
+     看起来就是「身体露在玻璃外面」（用户实测：静止也这样）。
+     这里算「鱼盒 [x0, x0+bw] 允许的最高 y」：取盒子两角所在弧高中更靠下的那个。
+     它依赖 P.x，是自洽的 —— 夹取只改 y 不改 x，不会来回抖。 */
+  function domeRx() { return cage.w / 2 - 3; }   /* 拱的水平半轴（留一点壁厚）*/
+  function domeRy() { return cage.h * 0.74; }    /* 拱的垂直半轴（≈ CSS 圆角的纵分量）*/
+  function domeTop(x0, bw) {
+    var cx0 = cage.x + cage.w / 2, rx = domeRx(), ry = domeRy();
+    function at(x) {
+      var d = (x - cx0) / rx;
+      d = d < -1 ? -1 : (d > 1 ? 1 : d);
+      return cage.y + ry * (1 - Math.sqrt(Math.max(0, 1 - d * d)));
+    }
+    var a = at(x0), b = at(x0 + bw);
+    return a > b ? a : b;
+  }
+  function bounds() {
+    /* 关进笼子：活动空间 = 拱形罩内（鱼按缩小系数算） */
+    if (P.cageIn && cage.on) {
+      var cs = P.scale || 1;
+      var bw = PET_W * cs, bh = PET_H * cs;
+      var padx = 14, pady = 9;           /* 左右留渲染层溢出（lift±5 + drift±4 + 摆角）*/
+      var cx0 = cage.x + cage.w / 2, rx = domeRx(), ry = domeRy();
+      var cb = Math.max(cage.y + pady + 1, cage.y + cage.h - bh - pady);
+      /* 拱高预算 → 反解「鱼盒的角最远能到中心多少」：拱 + 鱼高必须装得进罩子。
+         这一步是本次改动的关键：左右边界不再拍脑袋给 pad，而是由「装不下就往里收」
+         推出来 —— 罩子与鱼的尺寸怎么变都自洽，两侧再不会顶穿弧线。 */
+      var rise = Math.max(2, cb - cage.y - 2);        /* 允许的拱高（留 2px 不贴玻璃）*/
+      var maxAbsD = (rise >= ry) ? 1
+                  : Math.sqrt(Math.max(0, 1 - Math.pow(1 - rise / ry, 2)));
+      var half = maxAbsD * rx;                        /* 盒角距罩心的上限 */
+      var cl = Math.max(cage.x + padx, cx0 - half);
+      var cr = Math.min(cage.x + cage.w - bw - padx, cx0 + half - bw);
+      if (cr < cl) cr = cl;
+      /* 上边界跟着鱼的位置走：中央能顶到罩顶，靠两侧自然被压下来 */
+      var ct = Math.max(cage.y + 2, domeTop(P.x, bw));
+      if (ct > cb) ct = cb;             /* 罩子比鱼还小时退化成贴底，绝不翻转上下界 */
+      return { l: cl, r: cr, t: ct, b: cb };
+    }
+    var m = 14;
+    /* 躲猫猫（游向灵动岛口 / 刚窜出来的 1.4s）：允许到屏幕最顶端 */
+    var top = (P.islandGo || (P.islandExitUntil && now() < P.islandExitUntil)) ? 4 : Math.round(H * 0.34);
+    return { l: m, r: Math.max(m + 1, W - PET_W - m),
+             t: top, b: Math.max(top + 1, H - PET_H - 76) };
+  }
+  function pickTarget() {
+    var s = bounds();
+    /* 灵动岛起念：没进笼、不在冷却期，9% 概率游向屏幕顶端正中 */
+    if (!P._calm && !P.cageIn && !P.islandGo && now() > (P.islandCd || 0) && Math.random() < 0.09) {
+      P.islandGo = true;
+      P.tx = clamp(W / 2 - PET_W / 2, s.l, s.r);
+      P.ty = 4;
+      return;
+    }
+    if (Math.random() < 0.3) {
+      var left = Math.random() < 0.5;
+      P.tx = left ? rnd(s.l, s.l + 120) : rnd(s.r - 120, s.r);
+      P.ty = rnd(s.t, s.b);
+    } else {
+      P.tx = rnd(s.l, s.r);
+      P.ty = rnd(s.t + (s.b - s.t) * 0.15, s.b);
+    }
+    P.tx = clamp(P.tx, s.l, s.r);
+    P.ty = clamp(P.ty, s.t, s.b);
+  }
+  function clampInside() {
+    /* 「空气墙」只该管日常漫游 —— 拖拽/甩出惯性/去灵动岛口/出岛宽限期全屏自由
+       （2.17.0 用户实测：鱼拖不到屏幕上半区，就是拖拽也被夹在 34% 线下）*/
+    var free = P.drag || P.islandGo ||
+               (P.freeUntil && now() < P.freeUntil) ||
+               (P.islandExitUntil && now() < P.islandExitUntil);
+    var s = free
+      ? { l: 2, r: Math.max(3, W - PET_W - 2), t: 2, b: Math.max(3, H - PET_H - 2) }
+      : bounds();
+    var out = P.x < s.l - 0.5 || P.x > s.r + 0.5 || P.y < s.t - 0.5 || P.y > s.b + 0.5;
+    if (out && P.cageIn) {
+      /* 关在笼里：玻璃是硬的 —— 越界立刻夹回 + 弹性衰减，绝无「在外面漂」 */
+      P.x = clamp(P.x, s.l, s.r);
+      P.y = clamp(P.y, s.t, s.b);
+      P.vx *= 0.25; P.vy *= 0.25;
+      return;
+    }
+    if (out && !free) {
+      /* 惯性/拖拽结束后飘在漫游界外 → 不瞬移吸回（用户会看见闪跳），改成游回界内；
+         这里只兜底夹到屏幕内，回界靠它朝 tx,ty 游 */
+      P.tx = clamp(P.tx, s.l, s.r);
+      P.ty = clamp(P.ty, s.t, s.b);
+      P.restUntil = 0;
+      P.x = clamp(P.x, 2, Math.max(3, W - PET_W - 2));
+      P.y = clamp(P.y, 2, Math.max(3, H - PET_H - 2));
+    } else {
+      P.x = clamp(P.x, s.l, s.r);
+      P.y = clamp(P.y, s.t, s.b);
+    }
+  }
+
+  function mk(tag, attrs, parent) {
+    var el = document.createElementNS(svgns, tag);
+    if (attrs) for (var k in attrs) el.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+
+  /* ── 搭骨架 ──────────────────────────────────────────────────────────
+     文档顺序 = 绘制顺序（前 → 后 → 上）：
+       尾鳍（最后面）→ 背鳍 → 身体底色 → 明暗/白肚（裁在身体内）
+       → 额外部件 → 胸鳍（前面）→ 脸
+     改这个顺序前想清楚：底板不透明，着色层若排到它前面就全被盖住。 */
+  function build() {
+    var B = BREEDS[BREED];
+    PET_W = B.petW; PET_H = B.petH;
+    var vb = B.vb.split(' ').map(Number);
+    VBN = vb;
+    petEl.style.width = PET_W + 'px';
+    petEl.style.height = PET_H + 'px';
+    while (petEl.firstChild) petEl.removeChild(petEl.firstChild);
+
+    shadowEl = document.createElement('div'); shadowEl.id = 'ft-pet-shadow';
+    haloEl   = document.createElement('div'); haloEl.id = 'ft-pet-halo';
+    liftEl   = document.createElement('div'); liftEl.id = 'ft-pet-lift';
+    squashEl = document.createElement('div'); squashEl.id = 'ft-pet-squash';
+    rollEl   = document.createElement('div'); rollEl.id = 'ft-pet-roll';
+
+    var svg = mk('svg', { viewBox: B.vb, width: PET_W, height: PET_H });
+    /* 造型专属色（tint）：只注到这只 SVG 的内联变量上，**不动 ：root** ——
+       UI 全套（轮盘/气泡/阴影底座）仍吃皮肤原色；切回无 tint 的造型时移除内联值。
+       accent-strong/soft 一并派生，受光与 hover 光晕才不会残留上一款的色。 */
+    if (B.tint) {
+      svg.style.setProperty('--ft-accent', B.tint);
+      svg.style.setProperty('--ft-accent-strong', 'color-mix(in srgb, ' + B.tint + ' 80%, #fff)');
+      svg.style.setProperty('--ft-accent-soft', 'color-mix(in srgb, ' + B.tint + ' 32%, transparent)');
+    } else {
+      svg.style.removeProperty('--ft-accent');
+      svg.style.removeProperty('--ft-accent-strong');
+      svg.style.removeProperty('--ft-accent-soft');
+    }
+    var defs = mk('defs', {}, svg);
+    var cp = mk('clipPath', { id: 'ft-pet-clip' }, defs);
+    /* 裁剪路径里的形状只贡献几何，fill 不参与渲染 —— 但仍显式给一个实心色：
+       某些实现对 fill:none 的裁剪形状会得到空区域，整只鲸鱼直接消失。 */
+    mk('path', { d: B.body, class: 'ft-pet-clipshape' }, cp);
+
+    /* ⚠️ fill 一律走 class，**不要**写 fill="var(--ft-accent)" —— CSS 变量在
+       SVG presentation attribute 里不生效（attribute 不参与 var() 解析），
+       浏览器拿不到值就回落到默认黑填充：整片鳍变黑，且不抛任何错。 */
+    /* 尾鳍 = 两片**旋转椭圆**瓣，根部落在尾根上、朝后水平张开。
+       ⚠️ 鲸鱼尾是**水平**的：侧视时两瓣夹角必须小（±22°）。画成上下各 38°
+          （夹角 76°）得到的是**鲨鱼尾**（垂直尾鳍的侧视）—— 一眼就不像鲸鱼。
+       ⚠️ 也别用「细长贝塞尔叶」：两条边朝同一方向延伸会变成剪刀／蜻蜓翅膀。
+       椭圆瓣形状天然圆润、根端必落在轴上，是试过的三版里唯一稳的。 */
+    /* 摆浪组：**包住尾鳍与身体**，绕体心整体转一点。见 render() 里的 P.sway。 */
+    bendG = mk('g', { id: 'ft-pet-bend' }, svg);
+    tailG = mk('g', { id: 'ft-pet-tail', class: 'ft-pet-tail' }, bendG);
+    mk('path', { d: TAIL_D, class: B.panda ? 'ft-pet-ink-fill' : 'ft-pet-fill',
+                 transform: 'translate(' + B.tp.x + ',' + B.tp.y + ')' }, tailG);
+
+    breatheG = mk('g', { id: 'ft-pet-breathe' }, bendG);
+    /* 背鳍、胸鳍都挂在**身体组**里、画在身体底板**之前** → 根端被身体盖住，
+       看着是从背上/肚子下长出来的。挂在尾巴组里会跟着尾鳍一起甩，一眼假。 */
+    if (B.dorsal) mk('path', { d: B.dorsal, class: B.panda ? 'ft-pet-ink-fill' : 'ft-pet-fill' }, breatheG);
+    /* 远侧胸鳍：画在身体底板**之前**（底层）→ 根端整段被身体盖住，只从腹线
+       下面露出一个小暗尖 —— 侧视图里「另一侧那片鳍」的正确读法（真实侧视
+       只看得到近观众那片，远侧若隐若现）。它摆动与近侧**反相**（见 render）。 */
+    if (B.finFar) {
+      finFarG = mk('g', { id: 'ft-pet-fin-far', class: 'ft-pet-fin-far' }, breatheG);
+      mk('path', { d: B.finFar, class: B.panda ? 'ft-pet-ink-fill' : 'ft-pet-fill' }, finFarG);
+    } else {
+      finFarG = null;
+    }
+    /* 近侧胸鳍 = **挪到身体着色层之后（体侧上层）**，见下面 faceG 前 ——
+       2026-09-22 结构修正：贴在体侧的鳍不能压在身体底下。 */
+    mk('path', { class: 'ft-pet-body', d: B.body }, breatheG);
+    /* 三层着色：用「区域」而不是「椭圆渐变」出体积，全部裁在身体轮廓内。
+         亮背（上）→ 主色（中，就是底板本身）→ 白腹（下）→ 暗缘（最下缘）
+       白腹的上边界与嘴线是同一条 curve —— 一条线同时当「长嘴」和「肚皮分界」，
+       这是鲸类最好认的身份特征，也让三层的过渡天然贴合身体形状。
+       嘴线放在裁剪组里 → 超出轮廓的部分（海豚吻突那截）会被自动修掉，
+       不用为每款造型手调端点。 */
+    var clipped = mk('g', { 'clip-path': 'url(#ft-pet-clip)' }, breatheG);
+    mk('path', { class: 'ft-pet-lit',   d: B.lit },   clipped);
+    /* 背影（海豚计数阴影）：压在受光层上、白肚下 —— 背深腹浅的身份层 */
+    if (B.back) mk('path', { class: B.backCls || 'ft-pet-back', d: B.back }, clipped);
+    mk('path', { class: 'ft-pet-belly', d: B.belly }, clipped);
+    mk('path', { class: 'ft-pet-dark',  d: B.rim },   clipped);
+    /* 嘴 = 月牙笑口填充（旧版是 stroke 细线，桌面尺寸下就一条硬黑线，2026-09-22 弃用）*/
+    mk('path', { class: 'ft-pet-mouth-fill', d: B.mouthFill }, clipped);
+    /* 受光（specular）：卡通造型"是玩具不是贴纸"的关键一层 —— 沿背线一道月牙
+       + 头上一块椭圆高光。画在裁剪组里（跟着身体轮廓走），不裁剪会糊到轮廓外。 */
+    if (B.sheen) mk('path', { class: 'ft-pet-sheen', d: B.sheen }, clipped);
+    if (B.adds) for (var a = 0; a < B.adds.length; a++) {
+      mk(B.adds[a].el, Object.assign({ class: B.adds[a].cls }, B.adds[a].attrs), breatheG);
+    }
+
+    /* ── 涂装（look）：'classic' 卡通分层 · 'mech' 机械装甲 ──────────────────
+       契约与造型/皮肤一致：**页面不自己存状态**，原生 ftSetLook(look) 推下来。
+       全局量必须挂 window（`var` 是本次 build 的局部量，活不过一次 rebuild）；
+       ftSetLook 就地定义在这里 —— 每次重建都重挂一遍，天然幂等。 */
+    var LOOK = (window.FT_LOOK === 'mech') ? 'mech' : 'classic';
+    petEl.setAttribute('data-look', LOOK);
+    petEl.setAttribute('data-breed', BREED);   /* 造型名暴露给 CSS：发条鲸档要藏骨架件 */
+    window.FT_BREED = BREED;                   /* render 里要按档位调姿态幅度（读属性太慢）*/
+    window.ftSetLook = function (l) {
+      l = (l === 'mech') ? 'mech' : 'classic';
+      if (l === (window.FT_LOOK || 'classic')) return l;
+      window.FT_LOOK = l;
+      build();                       /* 几何与着色一起重建，避免半新半旧 */
+      return l;
+    };
+    if (BREED === 'clockwork') {
+      /* 发条鲸：整条鱼换成 AI 生图（app 图标同族）。**不装机械件** —— 位图自带齿轮，
+         再叠一层程序化装甲只会打架。 */
+      spiritSkin(breatheG);
+    } else if (LOOK === 'mech') {
+      /* 金属渐变：挂在 svg 上即可（渐变按 id 引用、永不渲染，不必塞进 defs）。
+         停点由亮到暗 → 装甲「上受光下背光」，比纯色像金属。 */
+      var mg = mk('linearGradient', { id: 'ft-pet-metal', x1: '0', y1: '0', x2: '0', y2: '1' }, svg);
+      mk('stop', { offset: '0',    'stop-color': '#f2f7fc' }, mg);
+      mk('stop', { offset: '0.30', 'stop-color': '#a8b4c2' }, mg);
+      mk('stop', { offset: '0.68', 'stop-color': '#5f6a78' }, mg);
+      mk('stop', { offset: '1',    'stop-color': '#2a3038' }, mg);
+      mechParts(clipped, tailG, B, vb);
+    }
+
+    /* ── 发条鲸 v3（AI 生图 → 六层分离件）────────────────────────────────
+       ② 上一版（v2）把主体整张图当唯一视觉，代价是尾鳍、胸鳍都只能"贴"在图上，
+          动作僵硬。v3 把一张干净的「无齿轮鲸」切成六层：
+
+            尾片(绕腰枢轴单向摆) → 主体 → 尾关节盖 → 胸鳍片(绕鳍根扇) → 鳍根盖 → 齿轮×3(整圈转)
+
+          · 切尾缝 = **以枢轴为圆心的圆弧**。圆弧绕圆心旋转映射到自己 → 接缝在任何摆角下
+            都精确闭合（v1 在轮廓上直切，旋转必然张开楔形缺口 → 用户报的"尾巴离开了"）。
+          · 尾关节盖 / 鳍根盖是**静态**件：盖住旋转时不可避免的细缝。它们也是"绕枢轴画出来的"，
+            所以盖上去不留边。
+          · 齿轮是**单独生图**的三颗独立齿轮（第一版素材三颗互相咬合，亮掩码是单一连通域，
+            切不开）→ 完整旋转对称 → 可以**整圈转**，不再是 ±16° 的小幅摆动。
+          · 每层都是帧坐标下的独立 <image>，全部塞进 breatheG → 呼吸缩放统一生效；
+            viewBox 换成位图坐标系（0 0 vw vh）→ 零形变、比例真实。
+          · ⚠️ 不用 getBBox()：桌宠浮层未 true 布局时返回 0（实测图直接不可见）。 */
+        /* ── 河道之灵（clockwork 档）：灵体涂装 ─────────────────────────────────
+       王者「河道之灵」的读法：半透明灵体 + 亮边 + 莲冠 + 光点 + 水波。
+       **全矢量 + CSS 动效**。原先的 AI 位图分层方案（v1~v3）已整体删除：
+       它的尾片/鳍片切弧与旋转枢轴不同心，摆动时必然撕开金刺与缺口。
+       颜色走 currentColor —— CSS 变量写进 SVG presentation attribute 不生效，
+       但 currentColor 能在属性里解析，皮肤换色时灵体跟着变。 */
+    function spiritSkin(breath) {
+      var svg = breath.ownerSVGElement;
+      if (!svg) return;
+      var defs = svg.querySelector('defs');
+      if (!defs) return;
+      var stale = defs.querySelector('#ft-spirit-grads');
+      if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+      var G = mk('g', { id: 'ft-spirit-grads' }, defs);
+
+      var bodyGrad = mk('linearGradient', { id: 'ft-spirit-body', x1: '0.5', y1: '0', x2: '0.5', y2: '1' }, G);
+      mk('stop', { offset: '0',   'stop-color': '#ffffff', 'stop-opacity': '.92' }, bodyGrad);
+      mk('stop', { offset: '.22', 'stop-color': 'currentColor', 'stop-opacity': '.78' }, bodyGrad);
+      mk('stop', { offset: '.62', 'stop-color': 'currentColor', 'stop-opacity': '.62' }, bodyGrad);
+      mk('stop', { offset: '1',   'stop-color': 'currentColor', 'stop-opacity': '.38' }, bodyGrad);
+
+      var rimGrad = mk('linearGradient', { id: 'ft-spirit-rim', x1: '0', y1: '0', x2: '1', y2: '1' }, G);
+      mk('stop', { offset: '0',   'stop-color': '#ffffff', 'stop-opacity': '.98' }, rimGrad);
+      mk('stop', { offset: '.45', 'stop-color': 'currentColor', 'stop-opacity': '.9' }, rimGrad);
+      mk('stop', { offset: '1',   'stop-color': '#ffffff', 'stop-opacity': '.9' }, rimGrad);
+
+      var auraGrad = mk('radialGradient', { id: 'ft-spirit-aura-g', cx: '.5', cy: '.5', r: '.5' }, G);
+      mk('stop', { offset: '0',  'stop-color': 'currentColor', 'stop-opacity': '.5' }, auraGrad);
+      mk('stop', { offset: '.5', 'stop-color': 'currentColor', 'stop-opacity': '.16' }, auraGrad);
+      mk('stop', { offset: '1',  'stop-color': 'currentColor', 'stop-opacity': '0' }, auraGrad);
+
+      var petalGrad = mk('linearGradient', { id: 'ft-spirit-petal', x1: '0.5', y1: '1', x2: '0.5', y2: '0' }, G);
+      mk('stop', { offset: '0',   'stop-color': 'currentColor', 'stop-opacity': '.72' }, petalGrad);
+      mk('stop', { offset: '.55', 'stop-color': 'currentColor', 'stop-opacity': '.38' }, petalGrad);
+      mk('stop', { offset: '1',   'stop-color': '#ffffff', 'stop-opacity': '.95' }, petalGrad);
+
+      /* ① 灵光 + ② 水波：都在鱼身后 → 插到 bendG 之前 */
+      var back = mk('g', { id: 'ft-spirit-back' }, svg);
+      mk('ellipse', { id: 'ft-spirit-aura', cx: 82, cy: -4, rx: 108, ry: 56,
+                      fill: 'url(#ft-spirit-aura-g)' }, back);
+      mk('ellipse', { id: 'ft-spirit-ripple1', cx: 80, cy: 36, rx: 58, ry: 5.4, fill: 'none',
+                      stroke: 'currentColor', 'stroke-width': 1.3, opacity: '.42' }, back);
+      mk('ellipse', { id: 'ft-spirit-ripple2', cx: 80, cy: 36, rx: 43, ry: 3.8, fill: 'none',
+                      stroke: 'currentColor', 'stroke-width': 1, opacity: '.3' }, back);
+      if (svg.firstChild && svg.firstChild.nextSibling) {
+        svg.insertBefore(back, svg.firstChild.nextSibling);
+      }
+
+      /* ③ 莲冠（腹部）⑤ 光点：挂身体组，跟呼吸一起动 */
+      var front = mk('g', { id: 'ft-spirit-front' }, breath);
+
+      var lotus = mk('g', { id: 'ft-spirit-lotus' }, front);
+      var CX = 112, CY = 24;   /* 腹部（2026-09-28 从头顶 46,-26 移来，避开胸鳍） */
+      var petals = [[-68, 22], [-34, 30], [0, 36], [34, 30], [68, 22]];
+      for (var i = 0; i < petals.length; i++) {
+        var ang = petals[i][0], len = petals[i][1], w = len * 0.34;
+        var d = 'M0,0 C' + (-w) + ',' + (-len * 0.36) + ' ' + (-w * 0.62) + ',' + (-len * 0.86) + ' 0,' + (-len) +
+                ' C' + (w * 0.62) + ',' + (-len * 0.86) + ' ' + (w) + ',' + (-len * 0.36) + ' 0,0 Z';
+        mk('path', { d: d, fill: 'url(#ft-spirit-petal)', stroke: 'currentColor',
+                     'stroke-width': 0.7, 'stroke-opacity': '.5',
+                     transform: 'translate(' + CX + ',' + CY + ') rotate(' + ang + ')' }, lotus);
+      }
+      mk('circle', { cx: CX, cy: CY - 6, r: 9.5, fill: 'currentColor', opacity: '.26' }, lotus);
+      mk('circle', { cx: CX, cy: CY - 6, r: 5, fill: '#ffffff', opacity: '.95' }, lotus);
+
+      /* 灵须(ribbon)：2026-09-28 用户「去掉杂乱的线条」→ 已删除 */
+
+      var motes = [[-6, 6, 2.0, 0], [16, -44, 1.7, .9], [64, -50, 1.9, 1.7], [104, -22, 1.5, 2.5],
+                   [150, -44, 2.0, .5], [190, 2, 1.6, 1.3], [176, 44, 2.0, 2.1], [96, 46, 1.7, 3.0],
+                   [40, 40, 1.4, 3.6], [-4, -28, 1.5, 2.2]];
+      for (var m = 0; m < motes.length; m++) {
+        var mo = motes[m];
+        mk('circle', { class: 'ft-spirit-mote', cx: mo[0], cy: mo[1], r: mo[2], fill: '#ffffff',
+                       'fill-opacity': '.9', style: 'animation-delay:' + mo[3] + 's' }, front);
+      }
+    }
+
+
+    /* 机械装甲零件（程序化，仅 look=mech 时使用）。全部按 **viewBox 归一化**定位，
+       并裁在身体轮廓里 → 换造型自动适配，不必每款手调坐标。
+       只做「读起来像机械」的四件事：分段板缝、铆钉、散热格栅、环形镜头。 */
+    function mechParts(clip, tail, BR, box) {
+      var bx = box[0], by = box[1], bw = box[2];
+      var fx = function (k) { return bx + bw * k; };
+      var fy = function (k) { return by + box[3] * k; };
+      /* ① 三道板缝：略弯的竖线，裁到身体后只剩弧面那一段 —— 装甲分段感 */
+      var sx = [0.34, 0.52, 0.70];
+      for (var i = 0; i < sx.length; i++) {
+        mk('path', { class: 'ft-pet-seam',
+          d: 'M' + q2(fx(sx[i]) - bw * 0.02) + ',' + q2(fy(0.20)) +
+             ' Q' + q2(fx(sx[i]) + bw * 0.02) + ',' + q2(fy(0.52)) +
+             ' ' + q2(fx(sx[i]) - bw * 0.015) + ',' + q2(fy(0.82)) }, clip);
+      }
+      /* ② 铆钉：沿板缝各点三颗（板缝渗出离子光，铆钉压住缝） */
+      for (var j = 0; j < sx.length; j++) {
+        for (var k = 0; k < 3; k++) {
+          mk('circle', { class: 'ft-pet-rivet',
+            cx: q2(fx(sx[j]) + (k - 1) * bw * 0.011), cy: q2(fy(0.26 + k * 0.21)), r: 1.7 }, clip);
+        }
+      }
+      /* ③ 散热格栅：背侧四道平行短线 */
+      for (var g = 0; g < 4; g++) {
+        mk('path', { class: 'ft-pet-grille',
+          d: 'M' + q2(fx(0.15) + g * bw * 0.026) + ',' + q2(fy(0.28)) +
+             ' L' + q2(fx(0.14) + g * bw * 0.026) + ',' + q2(fy(0.43)) }, clip);
+      }
+      /* ④ 环形镜头：套住原本的卡通眼 → 读作「传感器」 */
+      mk('circle', { class: 'ft-pet-lens', cx: BR.eye.x, cy: BR.eye.y, r: BR.eye.r * 1.8 }, clip);
+      /* ⑤ 尾部涡轮：三片叶轮 + 轮毂，挂在尾鳍组里 → 跟着摆尾一起动 */
+      var tg = mk('g', { class: 'ft-pet-turbine',
+        transform: 'translate(' + BR.tp.x + ',' + BR.tp.y + ')' }, tail);
+      for (var b2 = 0; b2 < 3; b2++) {
+        var ang = (b2 * 120 + 30) * Math.PI / 180;
+        mk('path', { class: 'ft-pet-seam',
+          d: 'M0,0 L' + q2(Math.cos(ang) * bw * 0.052) + ',' + q2(Math.sin(ang) * bw * 0.052) }, tg);
+      }
+      mk('circle', { class: 'ft-pet-rivet', cx: 0, cy: 0, r: 2.4 }, tg);
+    }
+
+    function q2(v) { return Math.round(v * 10) / 10; }
+
+    /* 近侧胸鳍 = **画在身体着色层之后（体侧上层）**：真实鱼画法里近侧胸鳍贴在
+       身体侧面上（尼莫/一切鱼插画都这么画），鳍身大部分盖在体侧、只鳍尖略过腹线。
+       旧版画在身体底下 → 鳍身全被盖住、只能整片垂到肚子外面 =「残疾鱼」的根源。
+       根端圆弧露在体侧上（卡通鳍本来就带可见的根部）；挥动由 render 独立驱动。 */
+    finG = mk('g', { id: 'ft-pet-fin', class: 'ft-pet-fin' }, breatheG);
+    mk('path', { d: B.fin, class: B.panda ? 'ft-pet-ink-fill' : 'ft-pet-fill' }, finG);
+
+    faceG = mk('g', { id: 'ft-pet-face' }, breatheG);
+    eyeG  = mk('g', { id: 'ft-pet-eye' }, faceG);
+    if (B.panda) mk('circle', { class: 'ft-pet-sclera', cx: B.eye.x, cy: B.eye.y, r: B.eye.r * 1.3 }, eyeG);
+    mk('circle', { class: 'ft-pet-pupil', cx: B.eye.x, cy: B.eye.y, r: B.eye.r }, eyeG);
+    mk('circle', { class: 'ft-pet-glint',  cx: B.eye.x + B.eye.g1.dx, cy: B.eye.y + B.eye.g1.dy, r: B.eye.g1.r }, eyeG);
+    mk('circle', { class: 'ft-pet-glint2', cx: B.eye.x + B.eye.g2.dx, cy: B.eye.y + B.eye.g2.dy, r: B.eye.g2.r }, eyeG);
+    mk('ellipse', { class: 'ft-pet-mouth-open',
+                    cx: B.mouthO.x, cy: B.mouthO.y, rx: B.mouthO.rx, ry: B.mouthO.ry }, faceG);
+
+    rollEl.appendChild(svg);
+    squashEl.appendChild(rollEl);
+    liftEl.appendChild(squashEl);
+    petEl.appendChild(shadowEl);
+    petEl.appendChild(haloEl);        /* 呼吸辉光：压在鱼身之下、地面影之上 */
+    petEl.appendChild(liftEl);
+
+    // 地面阴影宽度跟着体型走
+    var sw = Math.round(PET_W * 0.61), sh = Math.round(sw * 0.178);
+    shadowEl.style.width = sw + 'px'; shadowEl.style.height = sh + 'px';
+    shadowEl.style.margin = (-sh / 2) + 'px 0 0 ' + (-sw / 2) + 'px';
+
+    P.x = clamp(P.x || Math.round(W * 0.66), 0, Math.max(0, W - PET_W));
+    P.y = clamp(P.y || Math.round(H * 0.72), 0, Math.max(0, H - PET_H));
+    P.flip = 1; P.face = 1;
+    pickTarget();
+    P.nextPlay = now() + 5200;                // 别一上来就表演，先游一会儿（旧鲸鱼同款）
+  }
+
+  /* ── 局部坐标 → 世界坐标（考虑朝向），用于把泡泡/食物挂到嘴边 ────────── */
+  function toWorld(lx, ly) {
+    var facing = P.face;                      // 与 render 同一个朝向来源，别各算一份
+    var k = PET_W / VBN[2];
+    var px = (lx - VBN[0]) * k;
+    var py = (ly - VBN[1]) * k;
+    return { x: P.x + PET_W / 2 + facing * (px - PET_W / 2),
+             y: P.y + PET_H / 2 + (py - PET_H / 2) };
+  }
+
+  /* ── 每帧 ─────────────────────────────────────────────────────────────
+     ★ 先把下一帧排上，再干活。写成本函数最后一行的话，中途任何一步抛异常
+       都会让循环整体死掉 —— 表现是「鲸鱼突然冻住」，而 pageerror 只在控制台
+       一闪。本文件第一版就是栽在这上面（render 里引了 frame 的局部变量）。 */
+  function frame(ts) {
+    frameArmed = false;                       // 本帧在执行 → 队列空
+    if (POWER.level === 'rest') return;       // 停止档：不再排下一帧（下一次点火由 powerSet('full') 负责）
+    armFrame();
+    /* 省电档：整帧跳过（连物理都不算），rAF 回调只剩一次比较。
+       跳过的 ~45ms 由 ts-lastT 在下一帧如实补回 —— 本文件所有衰减都写成 pow(底, dt)、
+       与帧率无关，所以行为不变，只有观感降到 ~22fps（睡着时 12fps，动作本来就慢）。
+       2.23.7：本档不再自动进入（只有别处 ftPower('eco') 手动点火才会走到这里）。 */
+    if (POWER.level === 'eco' && ts - POWER.lastRun < (P.asleep ? DOZE_MS : ECO_MS)) return;
+    POWER.lastRun = ts;
+
+    var dt = lastT ? Math.min(0.05, (ts - lastT) / 1000) : 0.016;
+    lastT = ts;
+    P.t = now();
+    P.dt = dt;
+    if (dt > 0) { fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; } }
+
+    var t = P.t;
+    var fst = clamp(P.speed / 130, 0, 1);          // 归一速度：0 怠速 → 1 全速
+
+    idleTick(t);                                   // 功率自治（2.23.0）：降档 / 打盹 / 回岛
+
+    /* ── 相位：各自独立频率（非整数比）→ 不会锁相成「整块橡皮」──────────
+       摆尾/拍鳍的频率**随速度上升**，这是「它在用力游」与「它在飘」的分界。 */
+    /* ⚠️ 怠速频率别调高：旧版怠速 1.55Hz（0.65 秒一摆），停着也像在抽搐。
+       活物静止时几乎不动 —— 怠速 0.55Hz，跑到全速才升到 2.55Hz。 */
+    var tailF = 0.55 + fst * 2.00;
+    if (P.bellyN > 0) tailF = Math.max(tailF, 0.95);   // 负重：低速也在用力打水
+    /* 工作哨兵（2.24.0）：dsh 在跑 → 摆尾带上「在干活」的节奏。
+       只改这一个数 —— 不加元素、不位移、不出字，这是「不抢戏」的底线。
+       睡着时不加（它自己选的睡，别把人吵醒）。 */
+    if (P.work === 'busy' && !P.asleep) tailF = Math.max(tailF, 1.25);
+    P.tailF = tailF;                                   // 上报真实值（ftState 别再反推）
+    P.phTail  += dt * tailF * TAU;
+    P.phFin   += dt * (0.50 + fst * 1.20) * TAU;
+    P.phBreath += dt * (0.24 + fst * 0.46) * TAU;
+    P.phDrift += dt * HZ_DRIFT * TAU;
+
+    /* ── 漂移（内部噪声，制造「它自己也拿不定主意」的微动）── */
+    P.driftTx += dt * 0.35;
+    if (P.driftTx > P.driftTy) {
+      P.driftTy = P.driftTx + rnd(1.4, 3.6);
+      P.driftX = rnd(-7, 7);
+      P.driftY = rnd(-4, 4);
+    }
+
+    if (!P.drag) {
+      var dx = P.tx - P.x, dy = P.ty - P.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      /* 冻结门（2.20.0）：鼠标靠近 / 气泡可见 / 轮盘开着 → 不派新漫游目标。
+         鱼此刻多半已减速停在原地（进入冻结时 tx 已设为自身），停住等人来。 */
+      var holdStill = P.near || P.menuOpen || (env.bubble && t < env.bubbleUntil);
+      var slow = (P.chewing || P.asleep) ? 0.28 : 1;
+      /* 负重（2.16.3）：嘴里含着鲸腹存货 → 上限压低、加速变钝（货越多越沉）。
+         叼着东西还全速窜 = 没有重量感；上限 124×load，9 个时约 52px/s。 */
+      var load = P.bellyN > 0 ? clamp(0.72 - 0.034 * P.bellyN, 0.42, 0.72) : 1;
+      /* 到点前线性收速（dist×0.62）+ 上限 118 = 「减速靠站」，不是撞上去再急刹。
+         旧版 dist<6 时 speed*=0.86（**每帧**）：0.17 秒速度掉到 0.2 倍 —— 肉眼就是一顿。
+         衰减一律写成 pow(底, dt)，与帧率无关（120Hz 屏上旧写法会快一倍）。 */
+      var want = clamp(dist * 0.72, 0, 124) * slow * load;
+      if (dist < 8) {
+        P.speed *= Math.pow(0.25, dt);
+        /* ★ 节目进行中不许 pickTarget 抢目标：startAct 靠 tx=x 停住 + restUntil=0，
+           不加 actUntil 守卫的话下一帧就被漫游目标覆盖 —— 表演全变成「游来游去」
+           （2.15.1 实测病症的根因：节目根本没机会演完）。 */
+        if (t > P.actUntil && t > P.restUntil && !holdStill) { P.restUntil = t + rnd(1500, 5200); pickTarget(); }
+      } else {
+        P.speed += (want - P.speed) * Math.min(1, dt * 1.7 * load);
+      }
+      if (dist > 0.001) {
+        P.vx += (dx / dist * P.speed - P.vx) * Math.min(1, dt * 3.2);
+        P.vy += (dy / dist * P.speed - P.vy) * Math.min(1, dt * 3.2);
+      }
+      P.x += P.vx * dt;
+      P.y += P.vy * dt;
+      clampInside();
+      if (Math.abs(P.vx) > 2) {
+        var want2 = Math.atan2(P.vy, P.vx);
+        var diff = ((want2 - P.heading + Math.PI * 3) % TAU) - Math.PI;
+        P.heading += diff * Math.min(1, dt * 1.6);
+      }
+    } else {
+      P.speed *= 0.9;
+      /* 撸：按住不动 620ms 才成立（用位移区分「抚摸」与「搬运」）—— 沿用旧鲸鱼 v4。
+         会腻/会累 → 挣脱几秒不再接受抚摸（这就是「有个性」），不是有求必应的按钮。 */
+      if (!P.petting && P.moved < 6 && t - P.downAt > 620 && t > P.petRefuseUntil) {
+        if (P.bored > 0.62 || P.stamina < 0.2) {
+          P.petRefuseUntil = t + 4200;
+          P.bored = 0.18;
+          P.petting = false; P.drag = false;
+          petEl.style.cursor = 'grab';
+          jolt(4.4);
+          pickTarget();
+        } else {
+          P.petting = true; P.heartAt = 0;
+        }
+      }
+      if (P.petting) {
+        var kk = Math.min(1, (t - P.downAt - 620) / 1100);
+        P.jellyV += 8.0 * kk * dt;                     // 手底下轻轻下沉
+        if (t - P.heartAt > 440) { P.heartAt = t; blowHearts(1); }
+        P.tame = Math.min(1, P.tame + dt * 0.014);
+        P.stamina = Math.max(0, P.stamina - dt * 0.022);
+        P.lastInteract = t;
+      }
+    }
+
+    /* ── 内部状态推进（沿用旧鲸鱼 v4）：体力/兴奋/腻/心情 ──
+       运动与互动消耗体力；没人理就慢慢变腻；心情决定节目池 → 行为有理由 */
+    P.stamina = clamp(P.stamina + (P.asleep ? 0.020 : (fst > 0.25 ? -0.014 : -0.004)) * dt, 0, 1);
+    P.arousal = clamp(P.arousal - (P.asleep ? 0.020 : 0.012) * dt, 0.15, 1);
+    if (t - P.lastInteract > 8000 && !P.drag) P.bored = clamp(P.bored + dt * 0.006, 0, 1);
+    P.mood = moodNow();
+    /* 节目到期 → 回 roam */
+    if (P.actUntil && t > P.actUntil && P.mode !== 'roam') {
+      P.mode = 'roam'; P.actUntil = 0;
+    }
+    /* 自主挑节目：只在 roam、没被拖、没睡着、没在注意你、没在陪光标的时候
+       （⚠️ 陪光标时插播节目 = 目标点来回跳 → 光标前 4.3px 假抽动，门禁实测）*/
+    if (!P._calm && !P.drag && !P.asleep && !P.attn && !P.cageIn && P.actUntil <= t &&
+        t > P.nextPlay && t >= P.chaseUntil) pickPlay(t);
+    /* 睡觉：周期性冒一个小泡（旧鲸鱼同款「z 泡」的水下版）*/
+    if (P.asleep && t - P.zAt > 2400) { P.zAt = t; spray(1, true); }
+    /* 桌面上的鱼得会自己醒（2.23.0）：笼内那套苏醒分支管不到它 —— 否则「打盹」会变成睡死。 */
+    if (P.asleep && P.sleepUntil && !P.cageIn && !P.hidden && t > P.sleepUntil) {
+      P.asleep = false; P.blink = 1; P.sleepUntil = 0;
+      P.nextPlay = t + rnd(3500, 9000);
+    }
+
+    /* ── 凑过来看你 ──
+       ⚠️ 三条规矩，缺一条它就"抽风"（旧版三条全缺）：
+       ① 只在鼠标**刚动过**时才接管目标。旧版 mouse.active 一旦置真永不回退，
+          鼠标停了十分钟它还在追那个陈年坐标。
+       ② 侧向让位量必须**平滑**：旧版写 `mouse.x > cxx ? -30 : 30`，鼠标横向扫过鲸鱼
+          中线时符号瞬翻 → 目标点跳 60px → 它跟着来回弹（高频抖动的主因）。
+          改成对让位方向做低通，符号变了也要花半秒挪过去。
+       ③ 看了 2.6 秒还没人理它就放掉（chaseUntil），回去自己游 —— 不是黏住。 */
+    if (mouse.active && !P.drag) {
+      var cxx = P.x + PET_W / 2, cyy = P.y + PET_H / 2;
+      var mdx = mouse.x - cxx, mdy = mouse.y - cyy;
+      var md = Math.sqrt(mdx * mdx + mdy * mdy);
+      var fresh = (t - mouse.at) < 1400;
+      /* 注意力三段式（沿用旧鲸鱼 v4）：① 先注意到（停住愣 0.23~0.4s，这个停顿
+         正是「活的」证据）→ ② 再判断（熟人度/心情决定凑近还是躲开 —— 会拒绝你）
+         → ③ 才行动。零延迟的应答等于按钮，不是生物。 */
+      var busyAct = P.actUntil > t;
+      if (P.attn && (P.asleep || P.drag || busyAct || md > 190)) P.attn = 0;
+      if (!P.attn && !P.asleep && !busyAct && !P.petting && !P.islandGo &&
+          fresh && md < 118 && t - P.lastInteract > 1600 && P.fleeUntil < t) {
+        P.attn = 1; P.attnAt = t;
+        P.attnHold = 230 + Math.random() * 170;
+        P.tx = P.x; P.ty = P.y;                        // 先停住
+      } else if (P.attn === 1 && t - P.attnAt > P.attnHold) {
+        var pr = 0.26 + P.tame * 0.52 - (P.mood === 'annoyed' ? 0.5 : 0) - (P.mood === 'tired' ? 0.2 : 0);
+        P.attn = 2; P.attnAt = t;
+        P.attnPlan = Math.random() < pr ? 'approach' : 'away';
+      } else if (P.attn === 2 && t - P.attnAt > 140) {
+        P.attn = 0;
+        if (P.attnPlan === 'away') {
+          fleeFrom(mouse.x, mouse.y, t);
+        } else {
+          P.chaseUntil = t + 2600;                     // 凑到旁边看你
+          P.arousal = Math.min(1, P.arousal + 0.16);
+        }
+      }
+      if (!P.attn && !P.asleep && !P.islandGo && md < 120 && t < P.chaseUntil) {
+        P.chaseUntil = t + 2600;
+        /* ★★ 让位方向**必须锁存 + 带回差**。
+           把 sideWant 直接挂在 (mouse.x − 鲸鱼中心) 的符号上是一个**自激振荡**：
+           鲸鱼的中心一旦停在光标正下方，mdx 的符号逐帧翻转 → sideWant 在 ±1 之间跳
+           → 目标点跟着 ±34px 抖 → 它就在光标前面原地微抽。
+           实测（这一版变小之后）5 秒内折返 6 次、摆幅 1px —— 幅度小但频率高，
+           正是用户说的"抽风"里最烦人的那一种（看着像卡帧）。
+           两条规矩：① 一次「凑过来」只判**一次**方向（sideOn 锁存）；
+                    ② 之后再改判，必须先跑偏超过 2 倍让位量（68px 回差带）。 */
+        if (!P.sideOn) {
+          P.sideWant = (mdx >= 0) ? -1 : 1;             // 让到鼠标没压住的那一侧
+          P.sideOn = true;
+        } else if (Math.abs(mdx) > 68) {
+          P.sideWant = (mdx >= 0) ? -1 : 1;
+        }
+        P.side += (P.sideWant - P.side) * Math.min(1, dt * 2.2);
+        P.tx = clamp(mouse.x - PET_W * 0.5 + P.side * 34, bounds().l, bounds().r);
+        P.ty = clamp(mouse.y - PET_H * 0.5 - 14, bounds().t, bounds().b);
+      } else {
+        P.sideOn = false;                              // 放掉之后，下次「凑过来」重新判一次
+        P.side += (0 - P.side) * Math.min(1, dt * 1.4);
+      }
+    }
+
+    /* ── 眼皮 ── */
+    if (t > P.nextBlink) {
+      P.nextBlink = t + (P.asleep ? 900 : rnd(2600, 6800));
+      P.blink = 0.08;
+    }
+    P.blink += (1 - P.blink) * Math.min(1, dt * 7);
+
+    /* ── 跳跃：hopY 是**离地高度、向上为正** ──
+       hopV 初值正（向上），重力把它减到负 → hopY 先升后落，回到 0 落地。
+       ⚠️ 两个坑都踩过：① 把重力写成 `hopV += HOP_G*dt`（符号反了）→ hopV 单调增、
+          hopY 单调降，永远回不到 0，每跳一次鲸鱼往上飘一段，最后飘出视口。
+          症状极具欺骗性：不抛异常、上报里 P.y 依然正常、桌面穿透判定也「正确」，
+          只是它已经不在那个坐标了（用 getBoundingClientRect 抓到 y=-4755 才暴露）。
+       ② 把 hopY 当成「向上为负」→ hopY 一出手就 ≥0，落地判定立刻命中，鲸鱼
+          再也跳不起来（不报错，只是没反应）。改这里前先确认坐标系。 */
+    if (P.hopV !== 0 || P.hopY > 0) {
+      P.hopY += P.hopV * dt;
+      if (P.cageIn && P.hopY > 10) { P.hopY = 10; if (P.hopV > 0) { P.hopV = 0; jolt(3); } }   /* 穹顶封顶：撞玻璃就摁回 */
+      P.hopV -= 1250 * dt;
+      if (P.hopY <= 0) { P.hopY = 0; P.hopV = 0; jolt(7.5); }
+    }
+    P.jellyV += (-P.jelly * 92 - P.jellyV * 8.5) * dt;
+    P.jelly += P.jellyV * dt;
+
+    /* ── 姿态：俯仰 ──
+       旧版身体**永远水平**地平移（heading 只喂了 flip，没有任何旋转）—— 这是"僵硬"
+       最大的一处：上浮/下潜时身体该是斜的。用 vy 求角，分母加 46 抑制"原地微动也甩头"。
+       跳起来时把 hopV 也算进去：起跳抬头、落地低头（预备/跟随动作）。 */
+    var wantPitch = clamp(Math.atan2(P.vy + P.hopV * 0.30, Math.abs(P.vx) + 46) * 57.3, -26, 26);
+    if (P.asleep) wantPitch *= 0.35;
+    if (P.bellyN > 0 && !P.asleep) wantPitch += 4 + fst * 6;   // 负重：头微微下沉
+    wantPitch = clamp(wantPitch, -26, 30);
+    P.pitch += (wantPitch - P.pitch) * Math.min(1, dt * 3.0);
+
+    /* ── 咀嚼 ── */
+    if (P.chewing && t > P.chewUntil) { P.chewing = false; P.mouthOpen = 0; }
+    if (P.chewing && Math.random() < dt * 9) jolt(rnd(2.4, 5));
+
+    /* ── 回笼 / 灵动岛调度 ──────────────────────────────────────────────── */
+    if (P.hidden) {
+      /* 藏在岛里：什么都不做（位置上报已切成 -9999，穿透照常） */
+    } else if (cage.want) {
+      if (Math.sqrt(Math.pow(P.tx - P.x, 2) + Math.pow(P.ty - P.y, 2)) < 14) cageShut();
+    } else if (P.islandGo) {
+      if (P.y < 26 && Math.abs((P.x + PET_W / 2) - W / 2) < 90) {
+        P.islandGo = false; P.hidden = true;
+        P.islandCd = now() + 45000;
+        report('islandArrive', {});
+        /* 到家就睡（2.23.0）：桌面页从这一刻起没有任何东西要看 → 停帧（rest 档）。
+           出岛（ftIslandOut，鼠标碰到岛）会唤醒。于是「它回家了」同时是体验与能耗的最优解。 */
+        P.asleep = true; P.sleepUntil = 0;
+        P.tx = P.x; P.ty = P.y; P.speed = 0;
+        powerSet('rest');
+      }
+    } else if (P.cageIn && cage.on && !P.drag) {
+      if (P.playdead) {
+        if (t > P.playdeadUntil) { P.playdead = false; jolt(4.5); P.cageNext = t + rnd(3500, 7000); }
+      } else if (P.asleep && P.sleepUntil) {
+        if (t > P.sleepUntil) { P.asleep = false; P.blink = 1; P.cageNext = t + rnd(3000, 6000); }
+      } else if (P.ramPending) {
+        if (Math.abs(P.tx - P.x) < 12) {
+          P.ramPending = false;
+          jolt(8.5); P.hopV = 70;
+          if (cageEl) { cageEl.classList.add('shake'); setTimeout(function () { if (cageEl) cageEl.classList.remove('shake'); }, 460); }
+          report('cage', { shake: 1 });   /* 穹顶（主窗口里）跟着晃 */
+          spray(4);
+          P.restUntil = t + 700;
+          P.cageNext = t + rnd(4000, 9000);
+        }
+      } else if (t > (P.cageNext || 0)) {
+        var roll = Math.random();
+        if (roll < 0.26) {                    /* 踱步 */
+          pickTarget();
+          P.cageNext = t + rnd(2800, 5200);
+        } else if (roll < 0.48) {             /* 撞笼子：冲向一侧笼壁，撞得笼子晃 */
+          var b2 = bounds();
+          P.ramPending = true;
+          P.tx = Math.random() < 0.5 ? b2.l + 3 : b2.r - 3;   /* 撞到玻璃边但不越界 */
+          P.ty = clamp(P.y + rnd(-14, 14), b2.t, b2.b);
+          P.restUntil = 0;
+          P.cageNext = t + 5000;              /* 兜底（正常由命中分支续期）*/
+        } else if (roll < 0.66) {             /* 装死：白肚朝天 + 眼闭紧，飘一会儿 */
+          P.playdead = true; P.playdeadUntil = t + rnd(3200, 5800);
+          P.tx = P.x; P.ty = P.y; P.speed = 0;
+        } else if (roll < 0.82) {             /* 吐泡 */
+          spray(Math.round(rnd(4, 7)));
+          P.cageNext = t + rnd(2500, 5000);
+        } else {                              /* 趴底睡一觉 */
+          P.asleep = true; P.sleepUntil = t + rnd(3800, 7500);
+          P.tx = P.x; P.ty = P.y;
+          P.cageNext = t + 20000;             /* 醒来分支接管 */
+        }
+      }
+    }
+
+    render();
+    placeMic(t);
+
+    /* ── 位置上报（原生侧穿透判定的唯一依据）────────────────────────────────
+       原生以 30Hz 轮询鼠标、拿这个矩形做命中测试：命中才把鼠标事件让给鲸鱼，
+       否则整块浮层穿透。所以上报**必须持续**（鲸鱼一直在游，位置一直在变），
+       50ms 一次 ≈ 20Hz，最快游速下两次之间只挪约 6px，原生侧 16px 缓冲够吃。
+       ⚠️ 必须写在这里而不是 render() 里 —— t 是 frame 的局部量，render 里没有它。 */
+    if (t - lastReportAt > 50) {
+      lastReportAt = t;
+      /* 藏进灵动岛时上报 -9999：原生命中区落空 → 整层照常穿透，不会挡住菜单栏 */
+      if (P.hidden) {
+        report('rect', { x: -9999, y: -9999, w: 1, h: 1, drag: false });
+      } else {
+        var rx = Math.round(P.x), ry = Math.round(P.y);
+        var rw = Math.round(PET_W * (P.scale || 1)), rh = Math.round(PET_H * (P.scale || 1));
+        /* 麦克风 chip 并进命中矩形：它跟着鱼但不属于鱼身，漏了就是「看得见点不着」 */
+        if (micEl && micEl.getAttribute('data-on')) {
+          var mw = micEl.offsetWidth || 58, mh = micEl.offsetHeight || 24;
+          var mlx = parseFloat(micEl.style.left) || 0, mly = parseFloat(micEl.style.top) || 0;
+          var ux = Math.min(rx, mlx), uy = Math.min(ry, mly);
+          rw = Math.round(Math.max(rx + rw, mlx + mw) - ux);
+          rh = Math.round(Math.max(ry + rh, mly + mh) - uy);
+          rx = Math.round(ux); ry = Math.round(uy);
+        }
+        /* 长按轮盘并进命中矩形：圈比鱼身大得多，漏了就是「轮盘看得见点不着」 */
+        if (P.menuOpen && wheelEl && wheelEl.getAttribute('data-on')) {
+          var wx = parseFloat(wheelEl.style.left) || 0, wy = parseFloat(wheelEl.style.top) || 0;
+          var wr = 62 + 24 + 4;    /* 布局半径 62 + 按钮半径 23 + 余量 */
+          var ux2 = Math.min(rx, wx - wr), uy2 = Math.min(ry, wy - wr);
+          rw = Math.round(Math.max(rx + rw, wx + wr) - ux2);
+          rh = Math.round(Math.max(ry + rh, wy + wr) - uy2);
+          rx = Math.round(ux2); ry = Math.round(uy2);
+        }
+        report('rect', { x: rx, y: ry, w: rw, h: rh, drag: !!P.drag });
+      }
+    }
+  }
+
+  function jolt(v) { P.jellyV += (v === undefined ? 4 : v) * 0.9; }
+
+  /* ── 渲染：把状态翻译成各骨骼的 transform ─────────────────────────────
+     动画片宠物的四条基本功，全在这里：
+       ① 挤压拉伸（squash & stretch）—— 速度驱动 + 跳跃 + 咀嚼共用 jelly
+       ② 跟随与延迟（overlapping）—— 尾巴/胸鳍各有自己的相位，且相位错开
+       ③ 预备与跟随（anticipation/follow-through）—— 起跳前先压扁
+       ④ 弧线与非对称 —— 转向时侧倾（banking），转身经过压扁而不是瞬间翻面 */
+  function render() {
+    var B = BREEDS[BREED];
+    var dt = P.dt;
+    /* 朝向：**带滞回的显式状态**，不再每帧从 heading 现算。
+       垂直上浮/下潜时 heading→±90°、cos≈0，符号逐帧翻 —— 身体在 ±1 之间抽搐（抽风）。
+       规矩：只有横向速度够大（|vx|>26）时才允许改朝向。
+
+       ★★ 镜像判据：画面里**吻端在局部 x=0（左侧）**、尾鳍在 x=L+（右侧）。
+          所以「向右游」要 scaleX(-1) 把鼻子翻到右边 —— 写成 `vx<0 ? -1 : 1`
+          就是**倒着游**（2026-09-22 实测：向右游时眼睛落在身体盒的 19%，
+          即头在左、尾在右，而它正往右走）。这一条错了不会报错、也不会崩，
+          只会让它在半个方向上拖着尾巴走 —— 「不像活鱼」的一半在这里。 */
+    if (Math.abs(P.vx) > 26) {
+      var vf = P.vx > 0 ? -1 : 1;
+      if (vf !== P.face) P.face = vf;
+    }
+    var facing = P.face;
+    var fst = clamp(P.speed / 130, 0, 1);
+
+    /* 转身：不瞬间镜像。flip 连续地穿过 0，那一瞬身体宽度趋近 0，
+       天然形成「翻页」的压扁 —— 有体积感的转身。 */
+    P.flip += (facing - P.flip) * Math.min(1, dt * 8);
+    var flip = P.flip;
+
+    /* 尾巴：主摆 + 二次谐波（去掉机械的正弦感）*/
+    var tailAng = Math.sin(P.phTail) * (8 + fst * 15)
+                + Math.sin(P.phTail * 2 + 1.1) * (1.8 + fst * 4.0);
+    /* 摆浪：整条生物绕**体心**转一点，头与尾自然反向摆。相位比尾巴落后 0.5rad
+       —— 这是"跟随动作"：尾先动、身随后，而不是整块橡皮一起晃。
+       怠速 ±1.4°（几乎看不出），全速 ±4.0°（游起来才明显）。 */
+    P.sway = -Math.sin(P.phTail - 0.5) * (1.4 + fst * 2.6) * (P.bellyN > 0 ? 1.35 : 1);
+    /* 胸鳍：相位天然落后于尾巴（频率不同），摆动方向偏「向下压水」*/
+    var finAng = Math.sin(P.phFin + 0.9) * (4.5 + fst * 5)
+               + Math.sin(P.phFin * 2 + 2.4) * 1.2 + 3;
+
+    var breathe = Math.sin(P.phBreath) * 0.022;
+    var j = P.jelly;
+    var turn = 1 - Math.abs(flip);                  // 翻面中点的压扁量
+    var sx = 1 + breathe + fst * 0.05 + j * 0.05 + turn * 0.07;
+    var sy = 1 - breathe * 0.75 - fst * 0.035 - j * 0.07;
+
+    /* 位置：hopY 向上为正 → 世界坐标要**减**（屏幕 y 轴朝下）*/
+    /* 竖直起伏：慢漂移 + 与摆尾同频的小上下 —— 鲸靠尾叶上下打水前进，身体必然
+       跟着一起一伏。这是"活鱼"最省的一笔（0 成本，纯相位耦合）。 */
+    var lift = Math.sin(P.phDrift) * 2.6 + Math.sin(P.phTail + 1.0) * (0.7 + fst * 2.2);
+    if (P.bellyN > 0) lift += 3.2 + Math.sin(P.phTail * 0.5) * 1.1;   // 负重：吃水更深（屏幕 y 向下为正 → 加正数才是下沉）
+    var sc = P.scale || 1;
+    petEl.style.transform = 'translate3d(' + num(P.x, 0) + 'px,'
+      + num(P.y - P.hopY + lift + P.driftY, 0) + 'px,0)' + (sc !== 1 ? ' scale(' + sc + ')' : '');
+    var wantOp = (P.hidden || (!cage.on && P.cageIn)) ? '0' : '';
+    if (petEl.style.opacity !== wantOp) petEl.style.opacity = wantOp;
+
+    /* 姿态（屏幕空间）：俯仰 + 侧倾，**必须乘 flip**。
+       rollEl 的变换是 `rotate(A) scaleX(±1)`：先镜像、后旋转。所以朝左时角度要取反，
+       否则"下潜"会画成"抬头"（旧版 bank 就有这个反向 bug，只是 ±9° 看不出来）。
+       俯仰是本轮新增：之前身体永远水平地平移，这是僵硬感最大的一处。 */
+    var bank = num(clamp(P.vy * 0.045, -7, 7) + Math.sin(P.phDrift * 0.7) * 1.8, 0);
+    /* 乘 **−flip**（不是 flip）：鼻子在右边时（flip=−1）下潜要正角，在左边时要负角。
+       换个说法：att 与 flip 的符号**永远相反** —— 门禁就是这么验的。
+       写错方向的后果是"下潜画成抬头"，±9° 时代看不出来，现在 ±26° 一眼就能看出。 */
+    /* 发条鲸档把俯仰/侧倾压到 0.55 —— 位图鱼体态是"画好的水平鲸"，
+       骨架那套为程序化鱼调的 ±26° 幅度套上去会显得东倒西歪。 */
+    var att = num((P.pitch + bank) * (0 - flip) * (window.FT_BREED === 'clockwork' ? 0.55 : 1), 0);
+    rollEl.style.transform = 'rotate(' + att + 'deg) scaleX(' + num(flip, 1) + ')'
+      + (P.playdead ? ' scale(1,-1)' : '');
+
+    /* 挤压：体积守恒（横向胀 = 纵向缩）*/
+    squashEl.style.transform = 'scale(' + num(sx, 1) + ',' + num(sy, 1) + ')';
+    liftEl.style.transform = 'translateY(' + num(-Math.abs(P.hopY) * 0.04, 0) + 'px)';
+
+    var air = clamp(Math.abs(P.hopY) / 60, 0, 1);
+    shadowEl.style.transform = 'scale(' + num(1 - air * 0.45, 1) + ',' + num(1 - air * 0.32, 1) + ')';
+    shadowEl.style.opacity = String(num(0.9 - air * 0.55, 0.9));
+
+    /* 呼吸辉光：把呼吸相位映射到 0..1（breathe = sin × 0.022，故 ±0.022 满量程），
+       再乘心情系数。写的是 opacity —— 纯合成属性，不在主线程重绘。
+       睡着时压到 0.34：一只睡着的鱼不该像发光体。 */
+    if (haloEl) {
+      var bph = 0.5 + breathe / 0.044;               /* 0 = 最憋，1 = 最鼓 */
+      bph = bph < 0 ? 0 : (bph > 1 ? 1 : bph);
+      var hmood = P.asleep ? 0.34 : (P.mood === 'tired' ? 0.7 : 1);
+      var hopS = String(num((0.10 + 0.26 * bph) * hmood, 0.1));
+      if (haloEl.style.opacity !== hopS) haloEl.style.opacity = hopS;
+    }
+
+    /* 骨骼驱动 —— 全部走 SVG transform 属性，轴点显式给出，不给 CSS
+       transform-origin 留任何解释空间（不同浏览器对 SVG transform-box 的
+       默认值不一致，踩过）。 */
+    if (tailG) tailG.setAttribute('transform',
+      'rotate(' + num(tailAng, 0) + ' ' + B.tp.x + ' ' + B.tp.y + ')');
+    if (finG) finG.setAttribute('transform',
+      'rotate(' + num(finAng, 0) + ' ' + B.fp.x + ' ' + B.fp.y + ')');
+    /* 远侧鳍：**反相**（乘 −0.8）。真鱼两片胸鳍是对角摆的 —— 同相会让它们
+       像被一根轴串起来一起扇，比只画一片还假。 */
+    if (finFarG && B.ffp) finFarG.setAttribute('transform',
+      'rotate(' + num(0 - finAng * 0.62, 0) + ' ' + B.ffp.x + ' ' + B.ffp.y + ')');
+    /* 摆浪（局部空间）：挂在 bendG 上，**同一个变换层级**里让尾鳍+身体一起转，
+       尾根不可能脱节；尾鳍离转心更远 → 天然摆得更大。
+       （分开转会在尾根留下 3~4px 的错位台阶，试过。） */
+    if (bendG) bendG.setAttribute('transform',
+      'rotate(' + num(P.sway, 0) + ' ' + B.bc.x + ' ' + B.bc.y + ')');
+    if (breatheG) breatheG.setAttribute('transform',
+      'translate(' + B.bc.x + ',' + B.bc.y + ') scale(' + num(sx, 1) + ',' + num(sy, 1)
+      + ') translate(' + (-B.bc.x) + ',' + (-B.bc.y) + ')');
+
+    /* 发条鲸位图层：尾/鳍改由骨架相位驱动（与 calf/orca 同源），不再是独立 CSS 摆。
+       尾切缝双向 ±12 已验证 0 缝，双谐波摆角夹到 ±12.5 内；鳍 ±14。 */
+    
+
+    /* 视线：跟随鼠标（注意 facing 镜像补偿 —— 局部坐标已被镜像过）*/
+    /* 参考点取**头那一侧**的边：flip=+1 时鼻子在左 → 用左边界；flip=−1 → 右边界。
+       （原式写成 0.5+flip*0.5 正好取反，视线死区偏在尾侧，头一动就贴满偏移量。） */
+    var gx = clamp((mouse.x - (P.x + PET_W * (0.5 - flip * 0.5))) * 0.012, -2.6, 2.6) * flip;
+    var gy = clamp((mouse.y - (P.y + PET_H * 0.42)) * 0.010, -2.2, 2.2);
+    if (!mouse.active) { gx = 0; gy = 0; }
+    if (faceG) faceG.setAttribute('transform',
+      'translate(' + num(gx, 0) + ',' + num(gy, 0) + ')');
+
+    /* 眨眼：绕眼心纵向压扁（就是「闭眼盘成一条」）*/
+    var blinkY = P.asleep ? 0.06 : Math.max(0.06, num(P.blink, 1));
+    if (P.playdead) blinkY = 0.05;    /* 装死：眼闭紧（白肚朝天靠 scale(1,-1)）*/
+    if (P.chewing) blinkY *= 0.7;                   // 嚼东西时眯眼
+    if (eyeG) eyeG.setAttribute('transform',
+      'translate(' + B.eye.x + ',' + B.eye.y + ') scale(1,' + num(blinkY, 1)
+      + ') translate(' + (-B.eye.x) + ',' + (-B.eye.y) + ')');
+
+    var mood = P.playdead ? 'dead' : (j > 0.5 ? 'eat' : (P.asleep ? 'asleep' : (P.drag ? 'drag' : 'roam')));
+    if (petEl.getAttribute('data-mood') !== mood) petEl.setAttribute('data-mood', mood);
+    var mo = P.mouthOpen ? 'open' : 'shut';
+    if (petEl.getAttribute('data-mouth') !== mo) petEl.setAttribute('data-mouth', mo);
+
+    /* 气泡到期自清：以前只靠 mousemove 顺路检查——光标不来鲸鱼身上，
+       气泡就赖着不走（2.16.1 修：鲸腹的气泡全是「交互完人已离开」的场景，必踩）。 */
+    if (env.bubble && now() > env.bubbleUntil) hideBubble();
+
+    /* 叫人动线：气泡跟着鱼一起走。尺寸已缓存 → 不读布局；位移不过 1px 不写样式，
+       所以只在「鱼真的在游」的那几帧有开销。会话气泡被 pin 住（鱼不动）时不跟。 */
+    if (env.bubble && env.bubbleFollow) {
+      var bsz = env.bubbleSize || { w: 240, h: 60 };
+      var fbx = clamp(P.x + PET_W * 0.2, 12, Math.max(12, W - bsz.w - 12));
+      var fby = clamp(P.y - bsz.h - 14, 12, Math.max(12, H - bsz.h - 12));
+      if (Math.abs(fbx - env.bubbleX) > 1 || Math.abs(fby - env.bubbleY) > 1) {
+        env.bubbleX = fbx; env.bubbleY = fby;
+        env.bubble.style.left = num(fbx, 12) + 'px';
+        env.bubble.style.top = num(fby, 12) + 'px';
+      }
+    }
+
+    /* 鲸腹存货：嘴里叼着的「含着的东西」——看得见的口袋，位置每帧跟嘴 */
+    if (carryEl) {
+      var bn = P.bellyN | 0;
+      if (bn > 0) {
+        var mc = toWorld(BREEDS[BREED].mouthO.x, BREEDS[BREED].mouthO.y);
+        carryEl.style.left = num(mc.x, 0) + 'px';
+        carryEl.style.top = num(mc.y, 0) + 'px';
+        carryEl.style.opacity = '1';
+      } else {
+        carryEl.style.opacity = '0';
+      }
+    }
+  }
+
+  /* ── 交互：拖拽 / 点击 / 双击 ─────────────────────────────────────────── */
+  function petDown(e) {
+    if (e.button !== 0) return;
+    if (P.menuOpen) { wheelClose(); }            /* 轮盘开着再按鱼身：收盘直接摸鱼 */
+    P.drag = true; P.moved = 0; P.downAt = now(); P.lastInteract = now();
+    P.grabX = e.clientX - P.x; P.grabY = e.clientY - P.y;
+    petEl.style.cursor = 'grabbing';
+    try { petEl.setPointerCapture(e.pointerId); } catch (err) {}
+    P.asleep = false;
+    P.menuShown = false;
+    jolt(3.4);
+    /* 长按 850ms → 轮盘（挪动即取消：拖拽优先）。850 > 撸的 620ms：
+       短长按是摸（爱心），按住不放才出轮盘 —— 同一个「按住」手势两级语义。 */
+    if (P.lpTimer) { clearTimeout(P.lpTimer); }
+    P.lpTimer = setTimeout(function () {
+      P.lpTimer = 0;
+      if (P.drag && P.moved < 10 && !P.hidden) { P.menuShown = true; wheelOpen(); }
+    }, 850);
+  }
+  function petMove(e) {
+    if (!P.drag) return;
+    if (P.petting) return;                      // 撸着呢：手怎么动都不搬运它
+    var nx = e.clientX - P.grabX, ny = e.clientY - P.grabY;
+    P.moved += Math.abs(nx - P.x) + Math.abs(ny - P.y);
+    if (P.lpTimer && P.moved > 10) { clearTimeout(P.lpTimer); P.lpTimer = 0; }
+    P.vx = (nx - P.x) * 6; P.vy = (ny - P.y) * 6;
+    P.x = nx; P.y = ny;
+    /* 叼着关笼的鱼往外拖：拖出笼口就开门 —— 判定必须用**未夹取**的指针坐标
+       （先 clampInside 的话坐标永远出不了笼界，判定永远不触发，2.17.0 实测）*/
+    if (P.cageIn && cage.on) {
+      var ccx = nx + PET_W * (P.scale || 1) / 2, ccy = ny + PET_H * (P.scale || 1) / 2;
+      if (ccx < cage.x - 18 || ccx > cage.x + cage.w + 18 || ccy < cage.y - 18 || ccy > cage.y + cage.h + 18) {
+        P.cageIn = false; cageDoor(true); P.scale = 1;
+        P.playdead = false; P.ramPending = false;
+        setTimeout(function () { cageDoor(false); }, 650);
+        report('cage', { in: 0 });
+      }
+    }
+    clampInside();
+  }
+  function petUp(e) {
+    if (!P.drag) return;
+    if (P.lpTimer) { clearTimeout(P.lpTimer); P.lpTimer = 0; }
+    var wasPetting = P.petting;
+    P.petting = false;
+    P.drag = false;
+    petEl.style.cursor = 'grab';
+    try { petEl.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (P.menuShown) { P.menuShown = false; return; }   /* 轮盘已被长按呼出：别再当点击 */
+    if (wasPetting) { P.lastInteract = now(); return; }   // 撸完不误触发点击
+    if (P.moved < 7) { onTap(); }
+    else {
+      // 甩出去的惯性：松手速度接着飞一小段，然后自己游回去
+      P.vx = clamp(P.vx, -900, 900); P.vy = clamp(P.vy, -900, 900);
+      P.freeUntil = now() + 1100;     /* 惯性飞行期不受漫游界约束 */
+      P.restUntil = now() + 520;
+      /* 拖到灵动岛口松手 → 投递：设岛口目标 + 清干扰状态（只点火不指路它就游去旧目标了）*/
+      if (!P.islandGo && !P.hidden) {
+        var icx = P.x + PET_W / 2;
+        if (P.y < 130 && Math.abs(icx - W / 2) < 120) {
+          P.islandGo = true;
+          P.tx = clamp(W / 2 - PET_W / 2, 2, Math.max(3, W - PET_W - 2));
+          P.ty = 4;
+          P.asleep = false; P.restUntil = 0; P.chaseUntil = 0; P.fleeUntil = 0;
+        }
+      }
+      /* 拖进笼子松手 → 收监（先变大变小都交给 cageShut）*/
+      if (cage.on && !P.cageIn) {
+        var dcx = P.x + PET_W / 2, dcy = P.y + PET_H / 2;
+        if (dcx > cage.x + 10 && dcx < cage.x + cage.w - 10 && dcy > cage.y + 8 && dcy < cage.y + cage.h - 8) {
+          cageShut();
+        }
+      }
+      P.lastInteract = now();
+      report('moved', { x: Math.round(P.x), y: Math.round(P.y) });
+    }
+  }
+  function onTap() {
+    var t = now();
+    if (t - P.lastClickAt < 320) { P.lastClickAt = t; return; }   // 双击的第一下留给 dblclick
+    P.lastClickAt = t;
+    P.lastInteract = t;
+    P.hopV = 270;                                   // 起跳（重力在 frame 里减它）
+    jolt(-3.2);                                     // 起跳前先**横向胀、纵向缩**蓄力
+    P.tame = Math.min(1, P.tame + 0.01);
+    P.arousal = Math.min(1, P.arousal + 0.12);
+    P.bored = Math.max(0, P.bored - 0.15);
+    blowHearts(5);
+    report('tap', {});
+  }
+  function petDbl(e) {
+    e.preventDefault();
+    P.lastInteract = now();
+    /* 嘴里有存货 → 双击 = 吐回剪贴板（原生写 NSPasteboard 后回调 ftSpit）*/
+    if ((P.bellyN | 0) > 0) {
+      try { window.webkit.messageHandlers.fatiaowuPet.postMessage({ kind: 'spit', data: {} }); } catch (err) {}
+      return;
+    }
+    P.hopV = 330;
+    jolt(11);
+    blowHearts(9);
+    var c = toWorld(BREEDS[BREED].mouthO.x, BREEDS[BREED].mouthO.y);
+    ripple(c.x, c.y);
+    say('嗝', '双击我不会变出东西哦', '拖个文件给我含着，双击再取走', 2200);
+    report('dbltap', {});
+  }
+
+  /* ── 特效 ─────────────────────────────────────────────────────────────── */
+  function ripple(x, y) {
+    var el = document.createElement('div');
+    el.className = 'ft-dp-ripple';
+    el.style.left = num(x, 0) + 'px';
+    el.style.top = num(y, 0) + 'px';
+    el.style.setProperty('--rx', num(rnd(-14, 14), 0) + 'px');
+    stage.appendChild(el);
+    setTimeout(function () { el.remove(); }, 1150);
+  }
+  function blowHearts(n) {
+    for (var i = 0; i < n; i++) {
+      (function (i) {
+        setTimeout(function () {
+          var el = document.createElement('div');
+          el.className = 'ft-dp-heart';
+          el.style.left = num(P.x + PET_W * 0.32 + rnd(-14, 14), 0) + 'px';
+          el.style.top = num(P.y + 14, 0) + 'px';
+          el.style.setProperty('--hx', num(rnd(-22, 22), 0) + 'px');
+          stage.appendChild(el);
+          setTimeout(function () { el.remove(); }, 1400);
+        }, i * 95);
+      })(i);
+    }
+  }
+  function blowSparks(n) {
+    for (var i = 0; i < n; i++) {
+      (function (i) {
+        setTimeout(function () {
+          var el = document.createElement('div');
+          el.className = 'ft-dp-spark';
+          el.style.left = num(P.x + PET_W / 2 + rnd(-40, 40), 0) + 'px';
+          el.style.top = num(P.y + PET_H / 2 + rnd(-26, 26), 0) + 'px';
+          stage.appendChild(el);
+          setTimeout(function () { el.remove(); }, 1100);
+        }, i * 60);
+      })(i);
+    }
+  }
+
+  /* ── 行为系统：沿用旧鲸鱼（alive.js v4 活体层）──────────────────────────
+     节目 startAct / 按心情过滤的节目池 pickPlay / 心情 moodNow / 逃离 fleeFrom。
+     「有个性」的落点：会累、会腻，所以不是有求必应的按钮；
+     心情决定节目池 —— 每个行为都有「它这会儿为什么这样做」的理由。 */
+  function wBub(x, y, n, spread) {
+    for (var i = 0; i < n; i++) {
+      (function (i) {
+        setTimeout(function () {
+          var el = document.createElement('div');
+          el.className = 'ft-dp-wbub';
+          var s = 4 + Math.random() * 7;
+          el.style.width = s + 'px';
+          el.style.height = s + 'px';
+          el.style.left = num(x + rnd(-(spread || 12), spread || 12), 0) + 'px';
+          el.style.top = num(y, 0) + 'px';
+          el.style.setProperty('--wx', num(rnd(-26, 26), 0) + 'px');
+          stage.appendChild(el);
+          setTimeout(function () { el.remove(); }, 1250);
+        }, i * 70);
+      })(i);
+    }
+  }
+  /* 喷潮：从头顶气孔（呼吸孔）喷一串水花。气孔 ≈ 体长 20% 处、背线上方 */
+  function blowholePt() {
+    var bb = document.querySelector('path.ft-pet-body').getBBox();
+    return toWorld(bb.x + bb.width * 0.20, bb.y + 2);
+  }
+  function spray(n, small) {
+    var c = blowholePt();
+    wBub(c.x, c.y, n, small ? 5 : 12);
+  }
+  function mouthBub(n) {
+    var c = toWorld(BREEDS[BREED].mouthO.x, BREEDS[BREED].mouthO.y);
+    wBub(c.x, c.y, n, 9);
+  }
+
+  function moodNow() {
+    if (P.stamina < 0.25) return 'tired';
+    if (P.bored > 0.62) return 'annoyed';
+    if (P.arousal > 0.55) return 'playful';
+    if (P.tame > 0.6) return 'attached';
+    return 'calm';
+  }
+  /* 彩蛋池：独立于常规节目，只在精力足、心情不差时低概率插入（约 2~3 分钟一次）*/
+  var EGG_POOL = ['leap', 'dash', 'dash'];
+  function startAct(m, t) {
+    P.mode = m; P.lastPlay = m; P.lastInteract = t;
+    P.tx = P.x; P.ty = P.y;                          // 默认原地表演
+    P.restUntil = 0;
+    /* （2.15.3）用户明确：不要提示文字 —— 节目纯靠动作本身表达，不再 say 台词 */
+    if (m === 'stretch') {                           // 伸懒腰：先压扁再弹开
+      P.actUntil = t + 1500;
+      jolt(-5.6);
+      setTimeout(function () { if (P.mode === 'stretch') jolt(3.6); }, 520);
+    } else if (m === 'spout') {                      // 吐水花：小跳 + 气孔喷潮
+      P.actUntil = t + 1150;
+      jolt(2.4); P.hopV = 90;
+      setTimeout(function () { if (P.mode === 'spout') spray(9); }, 220);
+    } else if (m === 'dash') {                       // 冲刺：突然冲向屏幕另一头
+      P.actUntil = t + 1200;
+      P.tx = (P.x < (W - PET_W) / 2) ? W - PET_W - 30 : 30;
+      P.ty = clamp(P.y + rnd(-120, 120), 16, Math.max(16, H - PET_H - 16));
+      P.restUntil = t + 1400;
+      P.arousal = Math.min(1, P.arousal + 0.3);
+    } else if (m === 'leap') {                       // 彩蛋：跃出水面（大跳 + 水花 + 涟漪）
+      P.actUntil = t + 1400;
+      P.hopV = 430; jolt(-7.2);
+      setTimeout(function () {
+        if (P.mode !== 'leap') return;
+        spray(11);
+        var c = blowholePt();
+        ripple(c.x, c.y + 30);
+      }, 90);
+      setTimeout(function () {
+        if (P.mode !== 'leap') return;
+        var c = blowholePt();
+        ripple(c.x, c.y + 34);
+      }, 520);
+    }
+  }
+  function pickPlay(t) {
+    P.mood = moodNow();
+    /* 打盹（2.23.0）：体力低 / 待腻了更愿意睡一会儿 —— 用户要的「多让它睡觉」。
+       睡着的表现在 render 里本来就全有（呼吸变慢、尾巴几乎不动、偶尔冒 z 泡）。 */
+    if (!P.asleep && !P.islandGo && !P.cageIn && !P.drag && P.work !== 'busy' && P.mood !== 'annoyed' &&
+        (P.stamina < 0.5 || P.bored > 0.5) && Math.random() < 0.38) {
+      P.asleep = true;
+      P.sleepUntil = t + rnd(8000, 20000);
+      P.tx = P.x; P.ty = P.y; P.speed = 0;
+      P.nextPlay = t + 12000;
+      return;
+    }
+    if (P.stamina > 0.5 && P.mood !== 'tired' && P.mood !== 'annoyed' &&
+        Math.random() < 0.07) {
+      startAct(EGG_POOL[Math.floor(Math.random() * EGG_POOL.length)], t);
+      P.nextPlay = t + 14000 + Math.random() * 16000;
+      return;
+    }
+    var pool;
+    if (P.asleep) pool = ['stretch'];
+    else if (P.mood === 'tired') pool = ['stretch', 'stretch', 'spout'];
+    else if (P.mood === 'annoyed') pool = ['stretch'];               // 闹脾气：不表演
+    else if (P.mood === 'playful') pool = ['spout', 'dash', 'spout', 'dash'];
+    else if (P.mood === 'attached') pool = ['spout', 'dash', 'stretch', 'spout'];
+    else pool = ['stretch', 'spout', 'dash', 'stretch', 'spout'];
+    var m = pool[Math.floor(Math.random() * pool.length)];
+    if (m === P.lastPlay && Math.random() < 0.6) m = pool[Math.floor(Math.random() * pool.length)];
+    startAct(m, t);
+    /* 越兴奋越爱动；体力低 → 间隔拉长（它需要缓一缓）*/
+    var gap = 6.5 * (1.35 - P.arousal * 0.5) * (1 + (1 - P.stamina) * 0.5);
+    P.nextPlay = t + (gap + Math.random() * gap * 1.6) * 1000;
+  }
+  /* 躲：从鼠标方向逃开一段（注意力三段式判了「away」或被吓到时用）*/
+  function fleeFrom(mx, my, t) {
+    if (P.islandGo) return;              /* 去岛口路上不被吓跑（2.17.6）*/
+    var cx = P.x + PET_W / 2, cy = P.y + PET_H / 2;
+    var dx = cx - mx, dy = cy - my;
+    var d = Math.sqrt(dx * dx + dy * dy) || 1;
+    P.tx = clamp(cx + dx / d * 230, 16, Math.max(16, W - PET_W - 16));
+    P.ty = clamp(cy + dy / d * 170, 16, Math.max(16, H - PET_H - 16));
+    P.fleeUntil = t + 1500;
+    P.restUntil = t + 1500;
+    P.arousal = Math.min(1, P.arousal + 0.25);
+    P.bored = Math.max(0, P.bored - 0.1);
+    P.sideOn = false;
+  }
+  /* 驯服度持久化：点击/抚摸/投喂攒起来的熟人度，每天淡忘 ~4.5%（旧鲸鱼同款）*/
+  var TAME_KEY = 'ft-deskpet-tame';
+  (function loadTame() {
+    try {
+      var raw = localStorage.getItem(TAME_KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (typeof o.tame !== 'number') return;
+      var days = Math.max(0, (Date.now() - (o.at || Date.now())) / 86400000);
+      P.tame = clamp(o.tame - days * 0.045, 0, 1);
+    } catch (err) {}
+  })();
+  setInterval(function () {
+    try { localStorage.setItem(TAME_KEY, JSON.stringify({ tame: P.tame, at: Date.now() })); } catch (err) {}
+  }, 10000);
+
+  /* 气泡期间钉在原地（2.20.0 用户定的）：话没说完不游走，气泡散了再继续 */
+  function pinWhileTalking() {
+    if (P.drag || P.islandGo || P.hidden || P.cageIn) return;
+    P.tx = P.x; P.ty = P.y;
+  }
+
+  /* ── 说一句话（它自己的气泡，不进聊天流）──────────────────────────────── */
+  function say(title, sub, body, ms) {
+    hideBubble();
+    var el = document.createElement('div');
+    el.className = 'ft-dp-bubble';
+    if (env.light) el.setAttribute('data-light', '1');
+    var html = '';
+    if (title) html += '<div class="ft-dp-bubble-title">' + esc(title) + '</div>';
+    if (sub) html += '<div class="ft-dp-bubble-sub">' + esc(sub) + '</div>';
+    if (body) html += '<div class="ft-dp-bubble-body">' + body + '</div>';
+    el.innerHTML = html;
+    stage.appendChild(el);
+    placeBubble(el);
+    env.bubble = el;
+    /* 气泡统一 1.5s（用户定的）：调用处给的 ms 只会更短不会更长，别让它赖屏 */
+    env.bubbleUntil = now() + Math.min(ms || 1500, 1500);
+    pinWhileTalking();
+  }
+  function placeBubble(el) {
+    var bw = el.offsetWidth || 240, bh = el.offsetHeight || 60;
+    var bx = P.x + PET_W * 0.2;
+    var by = P.y - bh - 14;
+    bx = clamp(bx, 12, Math.max(12, W - bw - 12));
+    by = clamp(by, 12, Math.max(12, H - bh - 12));
+    el.style.left = num(bx, 12) + 'px';
+    el.style.top = num(by, 12) + 'px';
+  }
+  function hideBubble() {
+    if (env.bubble) {
+      var b = env.bubble;
+      b.setAttribute('data-fade', '1');
+      setTimeout(function () { b.remove(); }, 520);
+      env.bubble = null;
+      env.bubbleFollow = false;
+    }
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function report(kind, data) {
+    try { window.webkit.messageHandlers.fatiaowuPet.postMessage({ kind: kind, data: data }); } catch (e) {}
+  }
+
+  /* ── 投喂：原生把内容交到这里 ─────────────────────────────────────────── */
+  function feed(payload) {
+    if (!payload) return 'empty';
+    var t = now();
+    P.lastInteract = t;
+    P.asleep = false;
+    var c = toWorld(BREEDS[BREED].mouthO.x, BREEDS[BREED].mouthO.y);
+    var food = document.createElement('div');
+    food.className = 'ft-dp-food';
+    food.style.left = num(P.x + PET_W / 2, 0) + 'px';
+    food.style.top = num(P.y - 26, 0) + 'px';
+    stage.appendChild(food);
+    requestAnimationFrame(function () {
+      food.style.transform = 'translate(' + num(c.x - (P.x + PET_W / 2), 0) + 'px,'
+        + num(c.y - (P.y - 26), 0) + 'px) scale(.55)';
+      food.style.opacity = '.25';
+    });
+    setTimeout(function () { food.remove(); }, 420);
+
+    P.chewing = true;
+    P.chewUntil = t + 1150;
+    P.mouthOpen = 1;
+    /* 拖放悬停的 15s 定身到此松绑：含住后 2s 内恢复行动（叼着走，不是原地罚站） */
+    P.restUntil = Math.min(P.restUntil || 0, t + 2000);
+    P.nextPlay = Math.min(P.nextPlay || 0, t + 2000);
+    jolt(8);
+    P.hopV = 200;
+    /* 旧鲸鱼同款：吃饭是最硬的社交货币 —— 回体力、涨驯服、解腻 */
+    P.stamina = Math.min(1, P.stamina + 0.3);
+    P.tame = Math.min(1, P.tame + 0.025);
+    P.bored = Math.max(0, P.bored - 0.25);
+    P.arousal = Math.min(1, P.arousal + 0.2);
+
+    setTimeout(function () {
+      var body = '';
+      var title = payload.name || '喂过来一个东西';
+      var sub = '';
+      if (payload.kind === 'image') {
+        sub = '图片 · ' + fmtSize(payload.size);
+        body = '<div class="ft-dp-thumb"><img src="' + payload.dataUrl + '" alt=""></div>';
+      } else if (payload.kind === 'text') {
+        sub = '文字 · ' + (payload.len || (payload.text || '').length) + ' 字';
+        body = esc((payload.text || '').slice(0, 900));
+      } else {
+        sub = (payload.mime || '文件') + ' · ' + fmtSize(payload.size);
+        var ext = (payload.name || '').split('.').pop().slice(0, 4).toUpperCase();
+        body = '<div class="ft-dp-thumb"><div class="ft-dp-icon">' + esc(ext) + '</div>' +
+               '<div style="min-width:0">' + esc(payload.hint || '含住了，双击我吐回给你') + '</div></div>';
+      }
+      say(title, sub, body, 11000);
+      blowSparks(6);
+      report('fed', { kind: payload.kind, name: payload.name || '', size: payload.size || 0 });
+    }, 900);
+    return 'ok';
+  }
+  function fmtSize(n) {
+    n = Number(n) || 0;
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (Math.round(n / 1024 * 10) / 10) + ' KB';
+    return (Math.round(n / 1048576 * 10) / 10) + ' MB';
+  }
+
+  /* ── 原生调的接口 ─────────────────────────────────────────────────────── */
+  window.ftSetSkin = function (accent, strong, soft, softer, bg, light) {
+    var r = document.documentElement.style;
+    if (accent) r.setProperty('--ft-accent', accent);
+    if (strong) r.setProperty('--ft-accent-strong', strong);
+    if (soft) r.setProperty('--ft-accent-soft', soft);
+    if (softer) r.setProperty('--ft-accent-softer', softer);
+    if (bg) r.setProperty('--ft-accent-bg', bg);
+    env.light = !!light;
+    if (env.bubble) {
+      if (env.light) env.bubble.setAttribute('data-light', '1'); else env.bubble.removeAttribute('data-light');
+    }
+    return 'ok';
+  };
+  window.ftFeed = function () { powerWake(); return feed.apply(null, arguments); };
+  /* ── 鲸腹：原生把存货状态推下来（n>0 时嘴边叼着「含着的东西」）──────────── */
+  var carryEl = null;
+  function renderCarryBadge() {
+    if (!carryEl) return;
+    carryEl.textContent = P.bellyChip || '·';
+    var old = carryEl.querySelector('.n');
+    if (old) old.remove();
+    if ((P.bellyN | 0) > 1) {
+      var badge = document.createElement('span');
+      badge.className = 'n';
+      badge.textContent = String(P.bellyN | 0);
+      carryEl.appendChild(badge);
+    }
+  }
+  window.ftBelly = function (n, chip, label, extra) {
+    P.bellyN = n | 0;
+    P.bellyChip = chip || '';
+    P.bellyLabel = label || '';
+    if (P.bellyN > 0 && !carryEl) {
+      carryEl = document.createElement('div');
+      carryEl.className = 'ft-dp-carry';
+      stage.appendChild(carryEl);
+    }
+    renderCarryBadge();
+    /* 新含住时的教学时机：等吃完那条气泡（11s）讲完再开口，别插队 */
+    if (extra === 'full') {
+      setTimeout(function () {
+        say('含住了', P.bellyLabel, '双击我吐回剪贴板 · 右键咽下去', 5000);
+      }, 11800);
+    }
+    return 'ok';
+  };
+  /* 原生吐出成功后调：物件从嘴里飞出 + 喷潮庆祝 */
+  window.ftSpit = function (label) {
+    P.bellyN = Math.max(0, (P.bellyN | 0) - 1);
+    P.chewing = false;
+    P.mouthOpen = 1;
+    setTimeout(function () { if (!P.chewing) P.mouthOpen = 0; }, 900);
+    var c = toWorld(BREEDS[BREED].mouthO.x, BREEDS[BREED].mouthO.y);
+    var it = document.createElement('div');
+    it.className = 'ft-dp-carry';
+    it.style.opacity = '1';
+    it.textContent = P.bellyChip || '·';
+    it.style.left = num(c.x, 0) + 'px';
+    it.style.top = num(c.y, 0) + 'px';
+    it.style.transition = 'transform .55s cubic-bezier(.2,.6,.3,1), opacity .55s';
+    stage.appendChild(it);
+    requestAnimationFrame(function () {
+      it.style.transform = 'translate(' + num(rnd(-26, 26), 0) + 'px,-34px) rotate(' + num(rnd(-40, 40), 0) + 'deg) scale(.7)';
+      it.style.opacity = '0';
+    });
+    setTimeout(function () { it.remove(); }, 620);
+    startAct('spout', now());
+    blowSparks(7);
+    say('接住', label || P.bellyLabel, '已放进剪贴板，去按 ⌘V 吧', 4200);
+    renderCarryBadge();
+    return 'ok';
+  };
+  window.ftDragHover = function (on, hx, hy) {
+    if (on) powerWake();
+    zoneEl.setAttribute('data-on', on ? '1' : '0');
+    if (on) {
+      P.asleep = false;
+      /* 定身 15s：拖放悬停期间别漫游、别插播节目 —— 否则拖到一半它游走，drop 掉到桌面上 */
+      P.nextPlay = now() + 15000;
+      P.restUntil = now() + 15000;
+      var mx = (hx != null) ? hx : mouse.x, my = (hy != null) ? hy : mouse.y;
+      P.tx = clamp(mx - PET_W / 2, bounds().l, bounds().r);
+      P.ty = clamp(my - PET_H / 2 - 18, bounds().t, bounds().b);
+      P.mouthOpen = 1;
+      if (hx != null) { mouse.x = mx; mouse.y = my; mouse.active = true; mouse.at = now(); }
+    } else if (!P.chewing) {
+      P.mouthOpen = 0;
+    }
+    return 'ok';
+  };
+  /* ── 回笼：笼子区域（原生按 harness 窗口位置推下来，窗口动它跟着动）── */
+  /* 尺寸初值 = 原生 cageSize（180×94，2.23.7 从 150×78 加大）；真值由 ftSetCage 覆写。 */
+  var cage = { on: false, x: 0, y: 0, w: 180, h: 94, want: false };
+  /* 上一次推下来的笼位（**收笼也不清**）：切空间/换屏时笼子会先收再出，
+     留着旧位才能在它重新出现时把笼里的鱼一起搬过去，而不是让鱼留在旧坐标被弹出。 */
+  var cageLast = { x: 0, y: 0, valid: false };
+  var cageEl = null;
+  function ensureCageEl() {
+    if (cageEl) return;
+    cageEl = document.createElement('div');
+    cageEl.className = 'ft-dp-cage';
+    cageEl.innerHTML = '<div class="shell"></div>'
+      + '<div class="hit t"></div><div class="hit b"></div><div class="hit l"></div><div class="hit r"></div>';
+    cageEl.setAttribute('data-open', '0');
+    stage.appendChild(cageEl);
+    /* 命中区只做四条边条（中央留给鱼/穿透）：点边=唤它/吓它，双击=放它出来 */
+    Array.prototype.forEach.call(cageEl.querySelectorAll('.hit'), function (h) {
+      h.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (P.cageIn) cageTap(); else cageCallHome();
+      });
+      h.addEventListener('dblclick', function (e) {
+        e.stopPropagation();
+        if (P.cageIn) cageRelease(true);
+      });
+    });
+  }
+  function cageDoor(open) { if (cageEl) cageEl.setAttribute('data-open', open ? '1' : '0'); }
+  window.ftSetCage = function (x, y, w, h) {
+    ensureCageEl();
+    if (x < 0 || w <= 0) {           /* 收笼：harness 不在当前空间/不可见，笼子不出现在其他界面 */
+      cage.on = false; cageEl.style.display = 'none';
+      return 'off';
+    }
+    /* ★ 2.23.7：笼子跟着 harness 窗口搬家时，**笼里的鱼必须一起搬**。
+       笼子坐标由原生 30Hz 推（窗口一动就变），鱼的位置却是页面自己的状态 ——
+       只更新 cage.x/y 的话鱼会留在旧坐标，紧接着下面的「越狱判定」
+       （鱼心超出笼框 ±18px → 判为出笼、scale 回 1）立刻把它弹出罩外。
+       用户实测的「拖窗口，鱼就漂到罩子外面」就是这一条。
+       平移与坐标更新必须原子完成，中间不能给判定留一帧。 */
+    var dx = cageLast.valid ? x - cageLast.x : 0;
+    var dy = cageLast.valid ? y - cageLast.y : 0;
+    cageLast.x = x; cageLast.y = y; cageLast.valid = true;
+    cage.on = true; cage.x = x; cage.y = y; cage.w = w; cage.h = h;
+    cageEl.style.display = '';
+    cageEl.style.left = x + 'px'; cageEl.style.top = y + 'px';
+    cageEl.style.width = w + 'px'; cageEl.style.height = h + 'px';
+    if (!P.scaleInit) { P.scaleInit = 1; petEl.style.transformOrigin = '0 0'; }
+    if (P.cageIn && (dx || dy)) {
+      P.x += dx; P.y += dy;
+      P.tx += dx; P.ty += dy;
+    }
+    return 'ok';
+  };
+  function cageCallHome() {            /* 唤它回笼：开门 + 目标设进笼心 */
+    if (P.cageIn || !cage.on || P.hidden) return;
+    cage.want = true; cageDoor(true);
+    report('cage', { door: 1 });       /* 穹顶开门消散（玻璃罩在主窗口里，原生转发） */
+    var s = P.scale || 1;
+    P.tx = cage.x + cage.w / 2 - PET_W * s / 2;
+    P.ty = cage.y + cage.h / 2 - PET_H * s / 2;
+    P.restUntil = 0; P.asleep = false; P.islandGo = false;
+  }
+  function cageShut() {                /* 进笼落定：关门 + 缩小 */
+    if (P.cageIn) return;
+    P.cageIn = true; cage.want = false; cageDoor(false);
+    P.vx *= 0.25; P.vy *= 0.25;        /* 收监衰减拖拽惯性：鱼是被「接住」的，不是飞进来的 */
+    /* 笼内缩放 0.6（原 0.55）：罩子 ×1.2 只跟到 0.66，这里再让一点 ——
+       拱形吃掉的主要是左右空间，鱼小一圈，水平行程从 ~33px 放宽到 ~63px，
+       鱼在罩里才不像被卡住（贴边的鱼看起来也像「挤出去」的）。 */
+    P.scale = 0.6; P.actUntil = 0; P.restUntil = now() + 800;
+    P.playdead = false; P.ramPending = false;
+    P.cageNext = now() + rnd(2500, 5000);
+    P.islandGo = false;
+    blowHearts(3);
+    report('cage', { in: 1, door: 0 });   /* 收监落定 → 穹顶关门现形 */
+  }
+  function cageRelease(byUser) {       /* 出笼：开门 + 变大 + 蹿出去 */
+    if (!P.cageIn) return;
+    P.cageIn = false; cageDoor(true);
+    P.scale = 1; P.asleep = false; P.playdead = false; P.ramPending = false;
+    P.hopV = 260; jolt(6);
+    setTimeout(function () { cageDoor(false); }, 700);
+    P.restUntil = now() + 400;
+    P.tx = clamp(cage.x + cage.w / 2 + (Math.random() < 0.5 ? -1 : 1) * (cage.w + 170), 16, Math.max(16, W - PET_W - 16));
+    P.ty = clamp(cage.y + cage.h + 130, 16, Math.max(16, H - PET_H - 80));
+    blowSparks(7);
+    report('cage', { in: 0, door: 1 });   /* 出笼 → 穹顶开门消散 */
+    setTimeout(function () { report('cage', { door: 0 }); }, 700);  /* 蹿出去后关门 */
+    if (byUser) P.tame = Math.min(1, P.tame + 0.02);
+  }
+  function cageTap() {                 /* 点玻璃：吓一跳，窜到对侧 */
+    if (!P.cageIn) return;
+    jolt(7); P.hopV = 120;
+    report('cage', { shake: 1 });      /* 穹顶跟着晃一下 */
+    var b = bounds();
+    P.tx = (P.x < cage.x + cage.w / 2) ? b.r - 4 : b.l + 4;
+    P.ty = clamp(P.y, b.t, b.b);
+    P.restUntil = now() + 900;
+    blowSparks(4);
+  }
+  window.ftCageToggle = function () {  /* 菜单入口：关着就放，开着就唤 */
+    if (!cage.on) return 'no-cage';
+    if (P.cageIn) { cageRelease(true); return 'released'; }
+    cageCallHome(); return 'called';
+  };
+  /* ── 灵动岛躲猫猫 ── */
+  P.islandCd = P.islandCd || (now() + 60000);   /* 开局先安定 60s，别一上来就玩失踪 */
+  window.ftIslandGo = function () {    /* 菜单点名：游向岛口 */
+    if (P.cageIn || P.hidden) return 'busy';
+    P.islandGo = true; P.asleep = false; P.restUntil = 0;
+    P.tx = clamp(W / 2 - PET_W / 2, bounds().l, bounds().r);
+    P.ty = 4;
+    return 'ok';
+  };
+  window.ftIslandOut = function () {   /* 被光标碰到：从岛口窜出来 */
+    if (!P.hidden) return 'not-hidden';
+    powerWake();                      // 出岛即全速（rest 档在这里点火重启）
+    P.asleep = false; P.sleepUntil = 0;
+    P.hidden = false; P.islandGo = false;
+    P.islandCd = now() + 60000;
+    P.islandExitUntil = now() + 1400;  /* 出口宽限：这几帧允许待在顶部 */
+    P.x = clamp(W / 2 - PET_W / 2, 14, Math.max(15, W - PET_W - 14));
+    P.y = 60; P.vy = 170; P.vx = 0; P.speed = 0;
+    P.restUntil = now() + 600;
+    spray(8); jolt(-4);
+    P.tx = clamp(W / 2 + rnd(-240, 240), 14, Math.max(15, W - PET_W - 14));
+    P.ty = clamp(H * 0.55, 16, Math.max(17, H - PET_H - 80));
+    return 'ok';
+  };
+  window.ftSay = function (title, sub, body, ms) { say(title, sub, body, ms); return 'ok'; };
+
+  /* ── 工作哨兵（2.24.0）───────────────────────────────────────────────────
+     用户拍的规格：「鱼要知道 dsh 在忙什么、忙完来叫人，但**绝不能抢戏**」。
+     于是每一档都先问一句「这会不会烦人」，能省的全省掉：
+       busy      —— 只有摆尾加快（render 里那一行），零文字、零位移、零新元素
+       done      —— 你人在：一行小字 1.4s，鱼一动不动；睡着/在笼/在岛上时连字都不给
+       doneAway  —— 你不在：游到屏幕中部 + 长驻气泡（留到你回来）
+       stuck     —— dsh 卡在等你授权：同 doneAway，另加原生一声轻响（仅你不在时）
+       idle      —— 你回来了 → 收工：气泡再留 8s 让人来得及看，鱼恢复漫游
+     一律只报「跃迁」，绝不重复；原生侧另压两道闸：碎任务（<8s）根本不发这条，
+     以及同一次卡顿只喊一次。 */
+  function fmtDur(ms) {
+    var s0 = Math.round((ms || 0) / 1000);
+    if (s0 < 60) return s0 + ' 秒';
+    var m = Math.floor(s0 / 60), r = s0 % 60;
+    return r ? (m + ' 分 ' + r + ' 秒') : (m + ' 分');
+  }
+  /* 长驻气泡：复用对答那套视觉（内容型，不受 1.5s「闲话」规矩约束）——
+     它报的是工作结果，不是碎嘴。刻意不做成可点的样子：浮层全穿透，
+     气泡本来就点不到，别诱导用户去点。 */
+  function workBubble(text, ms, pin) {
+    hideBubble();
+    var el = document.createElement('div');
+    el.className = 'ft-dp-bubble ft-dp-work';
+    if (env.light) el.setAttribute('data-light', '1');
+    el.innerHTML = '<div class="ft-dp-bubble-body">' + esc(text) + '</div>';
+    stage.appendChild(el);
+    placeBubble(el);
+    env.bubble = el;
+    env.bubbleUntil = now() + (ms || 4000);
+    /* ★ 2.24.0 修：这里原本**无条件**调 pinWhileTalking()（P.tx = P.x）。
+       它本意是「说话时鱼别游走」，但叫人动线要的恰恰是**游过去** ——
+       刚设好的中部目标被当场覆盖，鱼原地不动、气泡晾在半空，整条动线失效。
+       改成：钉不钉由调用方给；不钉的话气泡**跟着鱼走**（见 render 里的跟随）。
+       尺寸只测一次存起来：placeBubble 里的 offsetWidth 是强制布局的量，
+       每帧读会把「跟随」变成每帧重排 —— 正是刚压下去的那笔开销。 */
+    env.bubbleSize = { w: el.offsetWidth || 240, h: el.offsetHeight || 60 };
+    env.bubbleFollow = !pin;
+    env.bubbleX = -1e9; env.bubbleY = -1e9;
+    if (pin) pinWhileTalking();
+    return el;
+  }
+  function isWorkBubble() {
+    return !!(env.bubble && env.bubble.className && env.bubble.className.indexOf('ft-dp-work') >= 0);
+  }
+  /* 叫人动线：游到屏幕中部偏上并停住。在笼里/在岛上不搬动 —— 玻璃罩和岛是它
+     自己选的地方，硬把它拽出来比不叫更烦人（那两种情况下只给气泡）。 */
+  function comeToMiddle(holdMs) {
+    if (P.cageIn || P.hidden) return false;
+    P.asleep = false;                   /* 醒着才看得见有人在叫你 */
+    P.tx = clamp(W / 2 - PET_W / 2, 14, Math.max(15, W - PET_W - 14));
+    P.ty = clamp(H * 0.46, 16, Math.max(17, H - PET_H - 80));
+    P.restUntil = now() + holdMs;        /* 到了别再自己游走 */
+    P.nextPlay = now() + holdMs;         /* 也别插播节目抢戏 */
+    return true;
+  }
+  window.ftWork = function (mode, ms) {
+    mode = String(mode || 'idle');
+    if (mode === 'busy') { P.work = 'busy'; return 'busy'; }
+    P.work = '';
+    if (mode === 'idle') {               /* 你回来了：收工 */
+      if (isWorkBubble()) env.bubbleUntil = now() + 8000;
+      if (P.restUntil > now()) P.restUntil = 0;
+      if (P.nextPlay > now()) P.nextPlay = now() + 3000;
+      return 'idle';
+    }
+    if (mode === 'done') {               /* 你人在：一行小字，鱼不动 */
+      if (P.asleep || P.cageIn || P.islandGo || P.drag) return 'quiet';
+      workBubble('活干完了 · ' + fmtDur(ms), 1400, true);
+      blowSparks(2);
+      return 'done';
+    }
+    if (mode === 'doneAway') {
+      /* 顺序要紧：先建气泡（pin=false → 不钉住鱼）再定目标。
+         反过来写的话，workBubble 里的 pinWhileTalking 会把刚设的目标盖掉。 */
+      workBubble('活干完了 · ' + fmtDur(ms), 20 * 60000, false);
+      var moved = comeToMiddle(20 * 60000);
+      if (moved) { spray(4); blowSparks(3); }
+      return moved ? 'doneAway' : 'doneAwayStill';
+    }
+    if (mode === 'stuck') {
+      workBubble('它停下来等你了', 20 * 60000, false);
+      var m2 = comeToMiddle(20 * 60000);
+      if (m2) { spray(3); blowSparks(3); }
+      return 'stuck';
+    }
+    return 'idle';
+  };
+
+  /* ── 鱼的对答（2.19.0）：麦克风 chip + native 下行通道 ─────────────────────
+     链路：chip 点击 → report('fishMic') → 原生借 VoiceEngine 收音 → partial/电平
+     打回这里（转写进气泡、电平进波形条）→ 判停定稿送网页版 → 回复经 reply() 进长驻气泡。
+     对答气泡是**内容型**，不受 say() 的 1.5s 上限约束（用户 1.5s 规矩管的是它的闲言碎语）。 */
+  var FS = { state: 'idle', partial: '' };
+  var micEl = (function () {
+    var m = document.createElement('div');
+    m.className = 'ft-dp-mic';
+    if (env.light) m.setAttribute('data-light', '1');
+    m.setAttribute('data-state', 'idle');
+    m.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4zm6-4a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11h-2z"/></svg>'
+      + '<span class="ft-dp-mic-label">对答</span>'
+      + '<i></i><i></i><i></i><i></i>'
+      + '<span class="ft-dp-mic-dots"><i></i><i></i><i></i></span>';
+    m.addEventListener('click', function (e) {
+      e.stopPropagation();
+      report('fishMic', { op: FS.state === 'listening' ? 'cancel' : 'start' });
+    });
+    m.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    stage.appendChild(m);
+    return m;
+  })();
+
+  /* ── 长按轮盘（2.20.0）：按住鱼身 850ms 呼出 ──────────────────────────────
+     用户定的四项：聊天（=原麦克风 chip 的入口）/ 回笼 / 上岛 / 换肤。
+     chip 平时收进轮盘（placeMic 只在会话进行中现身），平时想点中一条游动的鱼
+     上的小按钮太难 —— 轮盘把入口收敛到「按住鱼」这个最大的目标上。 */
+  var wheelEl = (function () {
+    var w = document.createElement('div');
+    w.className = 'ft-dp-wheel';
+    if (env.light) w.setAttribute('data-light', '1');
+    var ICONS = {
+      chat: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4zm6-4a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93V22h2v-3.07A8 8 0 0 0 20 11h-2z"/></svg>',
+      cage: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-7a1 1 0 0 0-1-1H5.06A7 7 0 0 1 12 5a7 7 0 0 1 6.94 7H17a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9z"/></svg>',
+      island: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5c-4.4 0-8 3.6-8 8s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zm0 13.4A5.4 5.4 0 1 1 17.4 13 5.4 5.4 0 0 1 12 18.4zm0-8.4a3 3 0 1 0 3 3 3 3 0 0 0-3-3z"/></svg>',
+      skin: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4A4.6 4.6 0 0 0 22 9.8C21.4 5.9 17 3 12 3zM6.5 12a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3.5 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>'
+    };
+    var ITEMS = [
+      { act: 'chat',   label: '聊天' },
+      { act: 'cage',   label: '回笼' },
+      { act: 'island', label: '上岛' },
+      { act: 'skin',   label: '换肤' }
+    ];
+    for (var i = 0; i < ITEMS.length; i++) {
+      var it = document.createElement('div');
+      it.className = 'ft-dp-wheel-item';
+      it.setAttribute('data-act', ITEMS[i].act);
+      /* -135° 起顺时针均布：聊天在上、回笼右、上岛下、换肤左。
+         --wx/--wy = 本片的圆周坐标，供 closed 态「吸回鱼心」的 transform 用；
+         弹出阶梯 delay 走 CSS nth-child（只在 [data-on] 态生效）。 */
+      var ang = (-135 + i * 90) * Math.PI / 180;
+      var wx = Math.round(Math.cos(ang) * 62) + 'px', wy = Math.round(Math.sin(ang) * 62) + 'px';
+      it.style.left = wx;
+      it.style.top = wy;
+      it.style.setProperty('--wx', wx);
+      it.style.setProperty('--wy', wy);
+      it.innerHTML = ICONS[ITEMS[i].act] + '<span>' + ITEMS[i].label + '</span>';
+      it.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+      it.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var act = e.currentTarget.getAttribute('data-act');
+        wheelClose();
+        if (act === 'chat') { report('fishMic', { op: FS.state === 'listening' ? 'cancel' : 'start' }); }
+        else if (act === 'cage') { if (window.ftCageToggle) window.ftCageToggle(); }
+        else if (act === 'island') { if (window.ftIslandGo) window.ftIslandGo(); }
+        else if (act === 'skin') {
+          var ks = Object.keys(BREEDS);
+          var nx = ks[(ks.indexOf(BREED) + 1) % ks.length];
+          if (window.ftBreed(nx)) say('换造型', BREEDS[nx].name || nx, '', 1500);
+        }
+      });
+      w.appendChild(it);
+    }
+    stage.appendChild(w);
+    return w;
+  })();
+
+  function wheelOpen() {
+    if (P.menuOpen || P.hidden) return;
+    P.menuOpen = true;
+    var cx = P.x + PET_W * (P.scale || 1) / 2, cy = P.y + PET_H * (P.scale || 1) / 2;
+    wheelEl.style.left = Math.round(cx) + 'px';
+    wheelEl.style.top = Math.round(cy) + 'px';
+    wheelEl.setAttribute('data-on', '1');
+    P.tx = P.x; P.ty = P.y;                     /* 轮盘开着：钉在原地 */
+    P.restUntil = now() + 60000;
+    P.petting = false;                          /* 长按先摸了两下 → 转入轮盘 */
+    report('wheel', { on: 1 });
+  }
+  function wheelClose() {
+    if (!P.menuOpen) return;
+    P.menuOpen = false;
+    wheelEl.removeAttribute('data-on');
+    if (!P.cageIn) P.restUntil = 0;
+    report('wheel', { on: 0 });
+  }
+
+  function chatSay(text, ms) {          /* 对答气泡：听写转写 / 思考 / 回复 / 出错共用 */
+    hideBubble();
+    var el = document.createElement('div');
+    el.className = 'ft-dp-bubble';
+    if (env.light) el.setAttribute('data-light', '1');
+    el.innerHTML = '<div class="ft-dp-bubble-body">' + esc(text) + '</div>';
+    stage.appendChild(el);
+    placeBubble(el);
+    env.bubble = el;
+    env.bubbleUntil = now() + (ms || 9000);
+    pinWhileTalking();
+  }
+
+  function setFishState(s) {
+    FS.state = s; FS.partial = '';
+    micEl.setAttribute('data-state', s);
+    if (s === 'listening') {
+      P.asleep = false;
+      P.restUntil = now() + 35000;      /* 听的时候别游走（看门狗 30s 内一定收摊） */
+      env.chatHold = true;
+      if (env.bubble) env.bubbleUntil = now() + 60000;   /* 上一条回复给新会话让位前先挂住 */
+    } else if (s === 'thinking') {
+      P.restUntil = now() + 90000;      /* 等网页版回话：钉在原地 */
+      if (env.bubble) env.bubbleUntil = now() + 90000;   /* 你的转写继续挂住 */
+      env.chatHold = true;
+    } else {
+      if (env.chatHold) { hideBubble(); env.chatHold = false; }
+      if (!P.cageIn) P.restUntil = 0;
+    }
+  }
+
+  window.__ftFish = {
+    state: function (s) { setFishState(String(s || 'idle')); },
+    partial: function (t) {             /* 实时转写：说一个字长一个字 */
+      if (FS.state !== 'listening') return;
+      FS.partial = String(t || '');
+      if (FS.partial) chatSay(FS.partial, 60000);
+      else if (env.chatHold) hideBubble();
+    },
+    levels: function (arr) {            /* 电平 → 波形条高度（28 桶取 4 桶） */
+      if (!arr || !arr.length || FS.state !== 'listening') return;
+      var bars = micEl.querySelectorAll(':scope > i');
+      for (var k = 0; k < bars.length; k++) {
+        var v = arr[Math.min(arr.length - 1, Math.floor(k * arr.length / bars.length))] || 0;
+        bars[k].style.height = Math.max(2.5, Math.min(16, 3 + v * 52)) + 'px';
+      }
+    },
+    reply: function (t) {
+      setFishState('idle');
+      if (t) { chatSay(String(t), 10000); blowHearts(3); }
+    },
+    error: function (m) { setFishState('idle'); if (m) chatSay(String(m), 6000); },
+    notice: function (m) { setFishState('idle'); if (m) chatSay(String(m), 5000); }
+  };
+  window.ftMicState = function () { return { state: FS.state, partial: FS.partial }; };  /* 探针用 */
+
+  function placeMic(t) {                /* 会话进行中才现身（2.20.0：入口收进轮盘） */
+    if (P.hidden || FS.state === 'idle') { micEl.removeAttribute('data-on'); return; }
+    micEl.setAttribute('data-on', '1');
+    var w = micEl.offsetWidth || 58, h = micEl.offsetHeight || 24;
+    var mx = clamp(P.x + PET_W / 2 - w / 2, 8, Math.max(8, W - w - 8));
+    var my = clamp(P.y + PET_H * (P.scale || 1) + 10, 8, Math.max(8, H - h - 8));
+    micEl.style.left = num(mx) + 'px';
+    micEl.style.top = num(my) + 'px';
+  }
+
+  /* 把鲸鱼摆到指定位置并**停住**：目标设成自身 + 长休息。
+     自检/截图要用它做定点 —— 否则鲸鱼一直在游，测试算好的坐标等回来早就不是它了
+     （第一版穿透自检就是这么假红的：读坐标与搬鼠标之间隔了 0.7s，它已经游走 80px）。 */
+  window.ftPlace = function (x, y) {
+    powerWake();
+    P.x = clamp(num(x, W * 0.6), bounds().l, bounds().r);
+    P.y = clamp(num(y, H * 0.7), bounds().t, bounds().b);
+    P.tx = P.x; P.ty = P.y;
+    P.vx = 0; P.vy = 0; P.speed = 0;
+    P.restUntil = now() + 120000;
+    return 'ok';
+  };
+  window.ftRoam = function () { P.restUntil = 0; pickTarget(); return 'ok'; };
+  /* 定向游向某点（给「看家」「凑过来」这类场景用，自检也靠它制造转身）*/
+  window.ftSwimTo = function (x, y) {
+    powerWake();
+    P.tx = clamp(num(x, P.x), bounds().l, bounds().r);
+    P.ty = clamp(num(y, P.y), bounds().t, bounds().b);
+    P.restUntil = now() + 60000;
+    return 'ok';
+  };
+  /* 强制眨一次眼 —— 眨眼是随机间隔的，自检不能靠等（等不到就是假红）*/
+  window.ftBlink = function () { P.blink = 0.08; P.nextBlink = now() + 4000; return 'ok'; };
+  window.ftSleep = function (on) {
+    powerWake();
+    P.asleep = !!on; P.blink = on ? 0.06 : 1; P.sleepUntil = 0;
+    return 'ok';
+  };
+  /* 功率档位（2.23.0）：原生可强制 'full' / 'eco' / 'rest'（自检与实测核对用）。
+     2.23.7 起页面**不再自动降档**（桌面上的鱼全程 full），所以这道门从「外部插手」
+     变成了「手动总闸」—— 保留给自检与实测（例如想复核 eco 档的节流是否仍有效）。 */
+  window.ftPower = function (level) {
+    if (level === 'full') powerWake();
+    else if (level === 'eco' || level === 'rest') powerSet(level);
+    return POWER.level;
+  };
+  window.ftCelebrate = function () {
+    blowSparks(12);
+    startAct('leap', now());                  // 旧鲸鱼式庆祝：跃出水面 + 喷潮 + 涟漪
+    say('完成了', '', '', 2600);
+    P.tame = Math.min(1, P.tame + 0.01);
+    return 'ok';
+  };
+  window.ftPlay = function (m) { startAct(m || 'spout', now()); return P.mode; };
+  /* 测试闸门：关掉自主节目调度（稳定性门禁要在「无随机表演」前提下量运动品质）*/
+  window.ftCalm = function (on) { P._calm = !!on; return 'ok'; };
+  /* 靠近即停（2.20.0）：原生 30Hz 轮询发现鼠标距鱼命中矩形 < 72px 时推 true。
+     冻结 = 帧循环 holdStill 门（不派新漫游目标）+ 进场瞬间目标设成自身（减速靠站）。
+     语义：人想点它 / 呼轮盘时，它停好等着，不再跟人玩「追我啊」。 */
+  window.ftNear = function (on, moved) {
+    on = !!on;
+    /* 2.23.4：第二个参数 = 原生侧判定的「指针真的在动」。只有「靠近 **且** 人真的在动鼠标」
+       才算用户在场 —— 否则鱼自己游过一支静止的鼠标就会 powerWake()，桌面鱼永远回不到 eco
+       （实测档位 full→eco 三秒后即被 eco→full 抵消，长期停在 full=12.8% 单核）。
+       省略第二个参数时按 true 处理，兼容旧的单参数调用。 */
+    moved = (moved === undefined) ? true : !!moved;
+    if (on && moved) powerWake();
+    if (on === !!P.near) return 'same';
+    P.near = on;
+    if (on && !P.drag && !P.islandGo && !P.hidden && !P.cageIn) { P.tx = P.x; P.ty = P.y; }
+    return 'ok';
+  };
+  /* 换造型：三款共用骨骼，切完立刻重建（自检/尝鲜用）*/
+  window.ftBreed = function (n) {
+    if (!BREEDS[n]) return 'unknown:' + n;
+    BREED = n;
+    build();
+    return BREEDS[n].name;
+  };
+  window.ftState = function () {
+    return {
+      ok: true, breed: BREED, x: Math.round(P.x), y: Math.round(P.y),
+      /* x1/y1 = 0.1px 精度。**验"有没有在抽动"必须看它，不能看取整后的 x**：
+         鲸鱼停在半像素位置时，尾数在 .5 边界上来回翻，x 会 40/41/40/41 地跳，
+         看着像"反复折返"，其实一点没动（2026-09-22 实测：摆幅 1px 折返 5 次）。 */
+      x1: Math.round(P.x * 10) / 10, y1: Math.round(P.y * 10) / 10,
+      mode: P.drag ? 'drag' : (P.asleep ? 'asleep' : 'roam'),
+      asleep: !!P.asleep,
+      /* 行为系统快照（沿用旧鲸鱼 v4 的内部状态，供诊断/自动化断言）*/
+      act: P.mode, lastPlay: P.lastPlay,
+      stamina: Math.round(P.stamina * 100) / 100,
+      arousal: Math.round(P.arousal * 100) / 100,
+      bored: Math.round(P.bored * 100) / 100,
+      mood: P.mood, tame: Math.round(P.tame * 1000) / 1000,
+      petting: !!P.petting, attn: P.attn,
+      speed: Math.round(P.speed), heading: Math.round(P.heading * 57.3),
+      flip: Math.round(P.flip * 1000) / 1000,
+      face: P.face, fst: Math.round(clamp(P.speed / 130, 0, 1) * 100) / 100,
+      pitch: Math.round(P.pitch * 10) / 10, sway: Math.round(P.sway * 100) / 100,
+      tailHz: Math.round((P.tailF || (0.55 + clamp(P.speed / 130, 0, 1) * 2.00)) * 100) / 100,
+      tgt: { x: Math.round(P.tx), y: Math.round(P.ty) },
+      chewing: !!P.chewing, bubble: !!env.bubble, fps: Math.round(fps),
+      power: POWER.level, work: P.work || '', idleSec: Math.round((now() - POWER.idleAt) / 1000),
+      powerLog: powerLog.slice(-6).join(' '),
+      belly: P.bellyN | 0, bellyChip: P.bellyChip || '',
+      cageIn: !!P.cageIn, cageWant: !!cage.want, hidden: !!P.hidden,
+      playdead: !!P.playdead, scale: P.scale || 1, islandGo: !!P.islandGo,
+      near: !!P.near, menu: !!P.menuOpen, chat: FS.state,
+      hopY: Math.round(P.hopY * 10) / 10, hopV: Math.round(P.hopV),
+      /* 呼吸辉光的实际透明度（探针用：验证「光晕随呼吸明暗」真的在动） */
+      halo: haloEl ? Math.round((parseFloat(haloEl.style.opacity) || 0) * 100) / 100 : -1,
+      w: PET_W, h: PET_H, bounds: bounds(), sw: W, sh: H,
+      /* 造型指标一起上报：真机日志里直接能看到"这只的体长比/眼占比/胸鳍露出"，
+         不用再靠截图量。PETRIG.audit 有违反时 rigBad 非空。 */
+      rig: PETRIG.report(BREEDS), rigBad: PETRIG.audit(BREEDS).join(' ; ')
+    };
+  };
+
+  /* ── 鼠标位置（窗口级穿透由原生负责，这里只要坐标做「看你」）──────────── */
+  document.addEventListener('mousemove', function (e) {
+    mouse.x = e.clientX; mouse.y = e.clientY;
+    mouse.active = true; mouse.at = now();      // 见「凑过来看你」规矩 ①
+    if (env.bubble && now() > env.bubbleUntil) hideBubble();
+  }, { passive: true });
+
+  /* ── 拖放接收 ───────────────────────────────────────────────────────────
+     macOS WKWebView 支持 HTML5 拖放：dragover 必须 preventDefault 才会来 drop。
+     文件内容全在本机读（FileReader），不经过任何网络。 */
+  var dragDepth = 0;
+  function onDragEnter(e) { e.preventDefault(); dragDepth++; window.ftDragHover(true); }
+  function onDragOver(e) {
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
+    if (mouse.active) { mouse.x = e.clientX; mouse.y = e.clientY; }
+  }
+  function onDragLeave(e) {
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) window.ftDragHover(false);
+  }
+  function onDrop(e) {
+    e.preventDefault();
+    dragDepth = 0;
+    window.ftDragHover(false);
+    var dt = e.dataTransfer;
+    if (!dt) { say('没接到', '', '拖放数据是空的', 2600); return; }
+    var files = dt.files;
+    if (files && files.length) {
+      handleFile(files[0]);
+      if (files.length > 1) {
+        setTimeout(function () { say('还有 ' + (files.length - 1) + ' 个', '', '我一次只吃一个，先尝了这个', 3000); }, 1600);
+      }
+      return;
+    }
+    var txt = dt.getData('text/plain') || dt.getData('text');
+    if (txt) { feed({ kind: 'text', name: '一段文字', text: txt, len: txt.length, size: txt.length, from: 'drop' }); return; }
+    say('没接到', '', '这个格式我还不认识', 2600);
+  }
+  function handleFile(f) {
+    var name = f.name || '未命名';
+    var mime = f.type || '';
+    if (mime.indexOf('image/') === 0) {
+      var fr = new FileReader();
+      fr.onload = function () { feed({ kind: 'image', name: name, size: f.size, mime: mime, dataUrl: fr.result, from: 'drop' }); };
+      fr.onerror = function () { feed({ kind: 'file', name: name, size: f.size, mime: mime, hint: '图片读不出来', from: 'drop' }); };
+      fr.readAsDataURL(f);
+      return;
+    }
+    var texty = /^(text\/|application\/(json|xml|javascript|x-sh|yaml|toml))/.test(mime) ||
+                /\.(txt|md|markdown|json|ya?ml|toml|js|ts|tsx|jsx|py|swift|go|rs|java|c|h|cpp|css|html?|sh|zsh|sql|log|csv|ini|conf|env)$/i.test(name);
+    if (texty) {
+      var fr2 = new FileReader();
+      fr2.onload = function () {
+        var txt = String(fr2.result || '');
+        feed({ kind: 'text', name: name, size: f.size, mime: mime || 'text', text: txt, len: txt.length, from: 'drop' });
+      };
+      fr2.onerror = function () { feed({ kind: 'file', name: name, size: f.size, mime: mime, hint: '读不出来', from: 'drop' }); };
+      fr2.readAsText(f);
+      return;
+    }
+    feed({ kind: 'file', name: name, size: f.size, mime: mime || '二进制文件', hint: '我含住了，还没学会怎么读它', from: 'drop' });
+  }
+
+  document.addEventListener('dragenter', onDragEnter, false);
+  document.addEventListener('dragover', onDragOver, false);
+  document.addEventListener('dragleave', onDragLeave, false);
+  document.addEventListener('drop', onDrop, false);
+  // 拖放期间浏览器默认会打开文件 —— 全屏兜住
+  window.addEventListener('dragover', function (e) { e.preventDefault(); }, false);
+  window.addEventListener('drop', function (e) { e.preventDefault(); }, false);
+
+  petEl.addEventListener('pointerdown', petDown);
+  petEl.addEventListener('pointermove', petMove);
+  petEl.addEventListener('pointerup', petUp);
+  petEl.addEventListener('pointercancel', function (e) {
+    if (P.lpTimer) { clearTimeout(P.lpTimer); P.lpTimer = 0; }
+    P.drag = false; petEl.style.cursor = 'grab';
+    try { petEl.releasePointerCapture(e.pointerId); } catch (err) {}
+  });
+  petEl.addEventListener('dblclick', petDbl);
+  /* 轮盘外点收盘：条目自己 stopPropagation 了；按鱼身走 petDown 里的收盘 */
+  document.addEventListener('pointerdown', function (e) {
+    if (P.menuOpen && wheelEl && !wheelEl.contains(e.target)) wheelClose();
+  }, true);
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && P.menuOpen) wheelClose();
+  });
+  petEl.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+    /* 右键 = 咽下去：清空鲸腹（不想留的东西直接消化掉）*/
+    if ((P.bellyN | 0) > 0) {
+      try { window.webkit.messageHandlers.fatiaowuPet.postMessage({ kind: 'bellyClear', data: {} }); } catch (err) {}
+      window.ftBelly(0, '', '');
+      var c = toWorld(BREEDS[BREED].mouthO.x, BREEDS[BREED].mouthO.y);
+      ripple(c.x, c.y);
+      blowSparks(3);
+      say('咕嘟', '咽下去了', '肚子空了', 2400);
+      report('bellyClear', {});
+    }
+  });
+
+  window.addEventListener('resize', function () {
+    W = window.innerWidth; H = window.innerHeight;
+    clampInside();
+  });
+
+  build();
+  requestAnimationFrame(frame);
+  // 就绪信号（原生侧自检盯这行）
+  try { window.webkit.messageHandlers.fatiaowuPet.postMessage({ kind: 'ready', data: { w: W, h: H } }); } catch (e) {}
+})();
+</script>
+</body>
+</html>

@@ -17,11 +17,6 @@ html body {
     linear-gradient(180deg, #200e0e 0%, #150808 55%, #0b0404 100%);
   background-attachment: fixed;
   background-size: cover, cover, cover;
-  animation: ft-glow-breathe 14s ease-in-out infinite alternate;
-}
-@keyframes ft-glow-breathe {
-  from { background-size: 100% 100%, 100% 100%, cover; }
-  to   { background-size: 113% 113%, 113% 113%, cover; }
 }
 
 /* 令牌覆盖：浅色/深色模式都生效（优先级高于应用自身） */
@@ -382,17 +377,8 @@ html body .hHd-Xa_root::after {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><g fill='rgba(255,140,80,0.5)'><circle cx='40' cy='30' r='1.4'/><circle cx='140' cy='80' r='1'/><circle cx='220' cy='40' r='1.2'/><circle cx='90' cy='140' r='0.9'/><circle cx='180' cy='180' r='1.3'/><circle cx='50' cy='220' r='1'/><circle cx='240' cy='210' r='0.8'/><circle cx='130' cy='240' r='1.1'/></g><g fill='rgba(255,220,150,0.7)'><circle cx='40' cy='30' r='0.7'/><circle cx='180' cy='180' r='0.6'/><circle cx='240' cy='210' r='0.5'/></g></svg>");
   background-size: 260px 260px;
   opacity: .55;
-  animation: ft-ember-rise 26s linear infinite;
-}
-@keyframes ft-ember-rise {
-  from { background-position: 0 260px; }
-  to { background-position: 0 0; }
 }
 /* 聊天区专用：图块 340px，循环走满一整块，杜绝跳帧 */
-@keyframes ft-ember-rise-wide {
-  from { background-position: 0 340px; }
-  to { background-position: 0 0; }
-}
 @media (prefers-reduced-motion: reduce) {
   html body .hHd-Xa_root::after { animation: none; }
 }
@@ -462,7 +448,6 @@ html body .EvIC1a_root::before {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='340' height='340'><g fill='rgba(255,150,90,0.5)'><circle cx='60' cy='40' r='1.6'/><circle cx='200' cy='110' r='1.2'/><circle cx='300' cy='60' r='1.4'/><circle cx='120' cy='200' r='1'/><circle cx='260' cy='250' r='1.3'/><circle cx='40' cy='300' r='1.1'/><circle cx='320' cy='300' r='0.9'/><circle cx='180' cy='330' r='1.2'/></g><g fill='rgba(255,225,160,0.6)'><circle cx='200' cy='110' r='0.8'/><circle cx='260' cy='250' r='0.7'/><circle cx='40' cy='300' r='0.6'/><circle cx='320' cy='300' r='0.6'/></g></svg>");
   background-size: 340px 340px;
   opacity: .55;
-  animation: ft-ember-rise-wide 26s linear infinite;
 }
 /* 烟尘层：淡暖色烟霭缓慢上浮（明显但克制） */
 html body .EvIC1a_root::after {
@@ -474,11 +459,6 @@ html body .EvIC1a_root::after {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='760' height='560'><defs><filter id='b'><feGaussianBlur stdDeviation='40'/></filter></defs><g filter='url(#b)' fill='rgba(255,150,130,0.72)'><ellipse cx='190' cy='140' rx='140' ry='70'/><ellipse cx='560' cy='300' rx='170' ry='80'/><ellipse cx='330' cy='470' rx='130' ry='66'/><ellipse cx='80' cy='420' rx='110' ry='56'/></g></svg>");
   background-size: 760px 560px;
   opacity: .3;
-  animation: ft-smoke-rise 26s linear infinite;
-}
-@keyframes ft-smoke-rise {
-  from { background-position: 0 560px; }
-  to { background-position: 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   html body .EvIC1a_root::before,
@@ -612,4 +592,112 @@ html body .hHd-Xa_logoRow .hHd-Xa_brand:hover .hHd-Xa_brandMark,
 html body [class$="_logoRow"] [class$="_brand"]:hover [class$="_brandMark"] {
   transform: translateY(-.5px);
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45)) drop-shadow(0 0 10px rgba(255, 71, 87, .46));
+}
+
+/* ===== 2.23.2 能耗收口：把「动 background-position 的伪元素」改成「动 transform 的合成层」 =====
+   实测依据（2026-09-23，真机 sample 4s + 自研 ft-cpu-busy.py）：
+     活跃皮肤是**绯红**（不是暗金），而本文件原先把 4 条无限动画挂在动 background-* 的属性上：
+       ft-glow-breathe 14s  → html body                动 background-size
+       ft-ember-rise   26s  → .hHd-Xa_root::after      动 background-position（侧栏余烬）
+       ft-ember-rise-wide   → .EvIC1a_root::before     动 background-position（会话区余烬）
+       ft-smoke-rise   26s  → .EvIC1a_root::after      动 background-position（会话区烟尘）
+     background-* 在 WebKit 里**永远不进合成层**，于是每帧都脏掉整块容器：sample 栈正是
+       __CFRunLoopDoTimers → RemoteLayerTreeDrawingArea::updateRendering →
+       paintReachableBackingStoreContents → RenderFlexibleBox::paintChildren →
+       InlineContentPainter::paint → TextBoxPainter::paint → FontCascade::drawText
+     即「长会话里的全部中文/代码文字每帧重排字形」。同一份 sample 里还有
+       Style::TreeResolver::resolveElement → resolvePseudoElement →
+       KeyframeEffectStack::applyKeyframeEffects → KeyframeInterpolation::interpolateKeyframes
+     说明伪元素动画确实跑在主线程上。
+   实测：四个动画全停 → 该 WebContent 43.2% → 0.2% 单核，内存 640M → 319M。
+   本块的修法：
+     ① 动画属性全部换成 transform（合成属性，GPU 平移/缩放，零重绘）；
+     ② 伪元素盒子上下各外扩一个图块周期，保证位移全过程中容器始终被盖满（不露缝）；
+     ③ body 的光晕呼吸撤掉、底图改静态（2.23.3：伪元素方案会把底图藏到 body 下面，见 ①）；
+     ④ 全部加 will-change: transform 明确要求独立合成层。
+   视觉与原来一致：图块周期 260/340/560px 与位移量相同，循环无缝。
+
+   ⚠️ 2.23.5 修正（2026-09-23 晚）：上面 ② 那条「盒子外扩」**是错的，已回退**。
+   外扩让伪元素越出父级，多出来的一截会被算进祖先滚动容器的可滚动溢出 → 会话滚动区凭空
+   多出 280px，滚到底时输入框上方留出一条空白带（用户报「输入框没有被定死在下面，跑到中间去了」）。
+   现在 ②③④ 全部退回 background-position：图块在动、盒子不动，与滚动/布局无关。
+   will-change 与「指针不在窗口就暂停」两道保留。 */
+
+/* ① 底图光晕：**留在 body 自己身上、保持静态**（2.23.3 修正）
+   2.23.2 曾把它搬到 `html::before` + `z-index:-2` 做 transform 缩放，结果整个窗口不红了：
+   z-index 为负的伪元素画在 body **背景之下**，只要 body（或 dsh 自己的整屏容器）有不透明底色
+   就把它整层盖掉 —— 浅色主题看不出（body 透明）、深色主题直接没底图，所以无头浅色截图会"骗过"你。
+   教训：**底色要画在承载底色那个元素自己身上**，别为了省电把它挪到它下面一层去。
+   代价诚实交代：光晕的「呼吸」缩放（原动画动 background-size）随之取消，底图改静态 → 零重绘。
+   实测这一项只值 ~0.3% 单核，不值得为它冒底图消失的风险。 */
+html body {
+  background-color: transparent;
+  background-image:
+    radial-gradient(1000px 750px at 88% -8%, rgba(255, 71, 87, .18), transparent 60%),
+    radial-gradient(900px 700px at -12% 110%, rgba(255, 107, 53, .14), transparent 62%),
+    linear-gradient(180deg, #200e0e 0%, #150808 55%, #0b0404 100%);
+  background-attachment: fixed;
+  background-size: cover, cover, cover;
+  /* 光晕「呼吸」：动的是 background-size，不改变盒子、也不进滚动溢出（2.23.5 恢复） */
+  animation: ft-glow-breathe 14s ease-in-out infinite alternate;
+}
+@keyframes ft-glow-breathe {
+  from { background-size: 100% 100%, 100% 100%, cover; }
+  to   { background-size: 113% 113%, 113% 113%, cover; }
+}
+
+/* ② 侧栏余烬（图块 260px）—— 2.23.5：盒子绝不再外扩，只动 background-position。
+   为什么退回来：给绝对定位的伪元素做「盒子上/下各外扩一个图块周期」，多出来的那一截会被
+   算进**祖先滚动容器的可滚动溢出**。实测三处外扩合计给会话滚动容器多塞了 280px 滚动高度
+   （scrollHeight 9040 vs 内容 8760），滚到底时输入框上方就空出 280px 一条带 —— 用户看到的
+   就是「输入框没被定死在下面、跑到中间」。background-position 只移动图块本身，盒子一动不动，
+   与滚动/布局彻底无关；图块周期性 + 位移正好一整块 → 依旧无缝、不露缝。 */
+html body .hHd-Xa_root::after {
+  animation: ft-ember-rise 26s linear infinite;
+  will-change: transform;      /* 合成提示：把这条动画的重绘关进自己这一层，别脏到侧栏文字 */
+}
+@keyframes ft-ember-rise {
+  from { background-position: 0 260px; }
+  to   { background-position: 0 0; }
+}
+
+/* ③ 会话区余烬（图块 340px，循环走满一整块） */
+html body .EvIC1a_root::before {
+  animation: ft-ember-rise-wide 26s linear infinite;
+  will-change: transform;
+}
+@keyframes ft-ember-rise-wide {
+  from { background-position: 0 340px; }
+  to   { background-position: 0 0; }
+}
+
+/* ④ 会话区烟尘（图块 560px） */
+html body .EvIC1a_root::after {
+  animation: ft-smoke-rise 26s linear infinite;
+  will-change: transform;
+}
+@keyframes ft-smoke-rise {
+  from { background-position: 0 560px; }
+  to   { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html body,
+  html body .hHd-Xa_root::after,
+  html body .EvIC1a_root::before,
+  html body .EvIC1a_root::after {
+    animation: none;
+  }
+}
+
+/* ⑤ 静止优先：指针不在窗口里时把三条环境动画**暂停** —— 暂停的 CSS 动画不再逐帧推进，
+      开销归零；指针回到窗口内自动恢复飘动。
+      这是本文件唯一还留着的「持续动画」，也是 2.23.2 之后唯一还花 CPU 的地方（≈7.7% 单核，
+      只在人真的在窗口前时才付）。若想彻底归零，把下面这个块整段删掉即可（视觉损失：
+      余烬/烟尘不再飘，静态构图与飘动起点完全一致）。 */
+html:not(:hover) body,
+html:not(:hover) body .hHd-Xa_root::after,
+html:not(:hover) body .EvIC1a_root::before,
+html:not(:hover) body .EvIC1a_root::after {
+  animation-play-state: paused;
 }

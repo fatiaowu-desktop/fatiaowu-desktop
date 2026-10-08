@@ -109,6 +109,10 @@
     guardSent: false,       // 已告知原生「这段时间是外放在响」—— 同样幂等
     suspended: false,       // 页面被切走（原生 toggleChatMode）：只记录状态，不驱动引擎
     lastVoiceAt: 0,         // 最近一次语音活动（出字/唤醒/人声）—— 卡死看门狗的时钟源
+    edit: null,             // 本句的「口语自纠」判定（见 spokenEdit）：显示与发送同看这一份
+    editOff: false,         // 用户点过「还原原话」→ 本句不再改写
+    editForce: '',          // 'cut' = 用户在 suggest 下手动选了「改用后半句」
+    editSent: null,         // 已按更正送出的留痕 {raw, out, cut}：thinking 态显示给用户看
     dark: true,             // 主题深浅（原生 setTheme 推送，换肤的唯一真相源）
     status: { running: false, onDevice: false, wakeWords: [] }
   };
@@ -122,6 +126,7 @@
     if (s === 'awake') VS.lastVoiceAt = Date.now();   // 看门狗从进捕捉这一刻起算
     if (s === 'thinking') VS.thinkStartAt = Date.now();
     VS.paintTag = '';                      // 强制下一次帧循环重刷文案
+    frameStart();                          // 状态一变就确保帧循环在跑（2.23.0 门控的唤醒点）
     paint();
     if (why) log('状态 → ' + s + '（' + why + '）');
     // 「AI 在发声」这个暂停必须跟着状态一起收。
@@ -248,6 +253,20 @@
       'transition:max-height .34s cubic-bezier(.22,.9,.3,1),opacity .2s ease,margin .34s ease;}',
       '#ft-vhud[data-state="ambient"] .ft-vtx,#ft-vhud[data-state="hearing"] .ft-vtx,',
       '#ft-vhud[data-state="sending"] .ft-vtx,#ft-vhud[data-state="thinking"] .ft-vtx{max-height:0;opacity:0;margin-top:0;}',
+      // ── 口语自纠：划掉重说 ──
+      // 撤回段要「看得见但已经作废」：所以是删除线 + 变灰，而不是红色 ——
+      // 红代表出错，这个只是你自己的改口。它可点（点 = 按原话发送），是发送前唯一的后悔药。
+      '#ft-vhud .ft-vtx .ft-cut{color:var(--dsw-alias-label-tertiary);opacity:.75;',
+      'text-decoration:line-through;text-decoration-thickness:1px;pointer-events:auto;cursor:pointer;',
+      'transition:opacity .15s ease,color .15s ease;}',
+      '#ft-vhud .ft-vtx .ft-cut:hover{opacity:1;color:var(--dsw-alias-label-primary);}',
+      // 更正段：送出去的就是这一段，用强调色标出来
+      '#ft-vhud .ft-vtx .ft-fix{color:var(--ftv-a);font-weight:500;}',
+      '#ft-vhud .ft-vtx .ft-arrow{color:var(--ftv-a);opacity:.7;margin:0 1px;}',
+      // 「改用后半句」：辨认出改口、却拆不出撤回范围时的唯一出口
+      '#ft-vhud .ft-vtx .ft-ask{pointer-events:auto;cursor:pointer;border:0;background:transparent;padding:0;',
+      'font:inherit;color:var(--ftv-a);text-decoration:underline;text-underline-offset:2px;}',
+      '#ft-vhud .ft-vtx .ft-ask:hover{opacity:.75;}',
       '#ft-vhud[data-state="ambient"] .ft-vhint{opacity:0;}',
       // 接续窗口里 ambient 也要把提示亮出来：这条提示正是「第二句怎么说」的答案
       '#ft-vhud[data-follow="1"] .ft-vhint{opacity:1;color:var(--ftv-a);}',
@@ -325,7 +344,35 @@
       'border:1.5px solid transparent;border-top-color:var(--ftv-a);border-right-color:var(--ftv-a);',
       'animation:ftv-spin .9s linear infinite;}',
       '@keyframes ftv-spin{to{transform:rotate(360deg);}}',
-      '#ft-mic-btn[data-err="1"]{border-color:var(--dsw-alias-border-danger);color:var(--dsw-alias-label-danger);}'
+      '#ft-mic-btn[data-err="1"]{border-color:var(--dsw-alias-border-danger);color:var(--dsw-alias-label-danger);}',
+      // ── chat 页专用：独立悬浮钮（锚在输入框上方右侧，见 placeMicBtnChat） ──
+      // 为什么不再嵌进 DeepSeek 的输入框工具行：那行是 React 管的，位置不可控、
+      // 还会在会话重渲染时把外来按钮一起撕走（实测「聊完一轮按钮失踪」）。
+      // 独立挂在 body 下 + fixed 定位 = 位置稳定、永不被摘。
+      // 动效是功能性的，不是装饰：环脉冲的频率/颜色直接表示「说话会被听到吗」。
+      '#ft-mic-btn[data-float="1"]{position:fixed;z-index:901;pointer-events:auto;',
+      'width:40px;height:40px;border-radius:50%;padding:0;',
+      'border:1px solid var(--ftv-a-soft);background:rgba(26,30,42,.94);color:var(--ftv-a);',
+      '-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);',
+      'box-shadow:0 8px 24px rgba(0,0,0,.34);',
+      'transition:transform .16s ease,background .2s ease,border-color .2s ease,color .2s ease;',
+      'animation:ft-mic-in .42s cubic-bezier(.22,1.25,.36,1) both;}',
+      // 提示环：关闭态慢（3.6s，弱）→ 开启态快（2.2s）→ 在听态最快（1.6s）。
+      // 环色走 currentColor：灰 = 没开，皮肤强调色 = 开着，用户不必读文字就知道状态。
+      '#ft-mic-btn[data-float="1"]::before{content:"";position:absolute;inset:-2px;border-radius:50%;',
+      'border:1.5px solid currentColor;opacity:0;animation:ft-mic-ring 3.6s ease-out infinite;}',
+      '#ft-mic-btn[data-float="1"].ft-light{background:rgba(250,252,248,.97);color:#1f4d3a;',
+      'border-color:rgba(20,60,40,.26);box-shadow:0 8px 24px rgba(30,60,45,.18);}',
+      '#ft-mic-btn[data-float="1"][data-on="0"]{color:var(--dsw-alias-label-secondary);}',
+      '#ft-mic-btn[data-float="1"][data-on="1"]{border-color:var(--ftv-a);background:var(--ftv-a-bg);}',
+      '#ft-mic-btn[data-float="1"][data-on="1"]::before{animation-duration:2.2s;}',
+      '#ft-mic-btn[data-float="1"][data-live="1"]{border-color:var(--ftv-a);}',
+      '#ft-mic-btn[data-float="1"][data-live="1"]::before{animation-duration:1.6s;opacity:.66;}',
+      '#ft-mic-btn[data-float="1"][data-busy="1"]::after{inset:-3px;border-radius:50%;}',
+      '#ft-mic-btn[data-float="1"]:hover{transform:scale(1.1);}',
+      '#ft-mic-btn[data-float="1"]:active{transform:scale(.96);}',
+      '@keyframes ft-mic-ring{0%{transform:scale(1);opacity:.5;}70%{transform:scale(1.65);opacity:0;}100%{opacity:0;}}',
+      '@keyframes ft-mic-in{from{transform:scale(.4);opacity:0;}to{transform:scale(1);opacity:1;}}'
     ].join('');
     document.head.appendChild(s);
   }
@@ -426,7 +473,49 @@
   // chat 页：听/唤醒时面板钉在输入框正上方；送出/等待/朗读时整体滑到**右下角**，
   // 别盖住刚生成的会话内容（用户实测：朗读面板正好挡住正在念的那段回答）。
   // 位置随状态平滑滑动（left/bottom 已加进 HUD 的 transition）。
+  // 麦克风钮的定位：锚在输入框卡片的**上方右侧**（右边缘对齐输入框右边）。
+  // 那儿是纯空白区：输入框内部的附件/深度搜索/发送键都在卡片里碰不到，
+  // 会话内容在更上方也够不着 —— 固定、显眼、且不挡任何东西。
+  // 与 HUD 同处一条水平线，视觉上是一件控件组（HUD 居中、钮在右端）。
+  // 找不到输入框时退到右下角（绝不隐形：语音关着时它就是开启入口）。
+  function placeMicBtnChat() {
+    if (!micBtn || micBtn.getAttribute('data-float') !== '1') return;
+    var W = 40, GAP = 12, EDGE = 20;
+    var left = window.innerWidth - W - EDGE;
+    var bottom = EDGE;
+    var anchor = '右下角(未命中输入框)';
+    var el = composer();
+    if (el) {
+      var r = el.getBoundingClientRect();
+      if (r.width > 0) {
+        left = r.right - W;                          // 右对齐输入框右边缘
+        bottom = window.innerHeight - r.top + GAP;   // 落在输入框上沿之上
+        anchor = '输入框上方右侧';
+      }
+    }
+    // 与居中的 HUD 同一水平线时，若横向上会叠上就让开（HUD 是信息面板，优先）
+    var busy = VS.state === 'sending' || VS.state === 'thinking' || VS.state === 'speaking';
+    if (!busy && hud && hud.offsetWidth) {
+      var hudRight = window.innerWidth / 2 + hud.offsetWidth / 2;
+      if (left < hudRight + 10) left = hudRight + 10;
+    }
+    left = Math.max(EDGE, Math.min(window.innerWidth - W - EDGE, left));
+    bottom = Math.max(EDGE, Math.min(window.innerHeight - W - 120, bottom));
+    if (micBtn.style.left !== left + 'px') micBtn.style.left = left + 'px';
+    if (micBtn.style.bottom !== bottom + 'px') micBtn.style.bottom = bottom + 'px';
+    if (micBtn.style.right) micBtn.style.right = '';
+    if (micBtn.style.top) micBtn.style.top = '';
+    // 一次性定位诊断：真机上「位置对不对」只看这一行 ——
+    // 命中输入框则钮落在它上方右侧；写成「右下角」就是选择器没命中（该补 chatComposer 的判据）。
+    if (!placeMicBtnChat.logged) {
+      placeMicBtnChat.logged = true;
+      log('chat 麦克风钮定位: ' + anchor + ' left=' + Math.round(left) + ' bottom=' + Math.round(bottom) +
+          ' 视口=' + window.innerWidth + 'x' + window.innerHeight);
+    }
+  }
+
   function placeHudChat() {
+    placeMicBtnChat();
     var busy = VS.state === 'sending' || VS.state === 'thinking' || VS.state === 'speaking';
     if (busy) {
       // 右下角：HUD 仍是 left + translateX(-50%) 语义，左坐标 = 视口宽 - 半宽 - 边距
@@ -485,9 +574,16 @@
     } else { lab.textContent = '语音'; ht = ''; }
     hint.textContent = ht;
     if (vtx) {
-      if (s === 'thinking') vtx.textContent = VS.partial || '已送出，等 harness 回复…';
-      else if (s === 'speaking') vtx.textContent = VS.lastReply ? VS.lastReply.slice(0, 120) : '';
-      else vtx.textContent = VS.partial || '';
+      if (s === 'thinking') {
+        // 改写过就必须说清楚「送出去的是哪一版」—— 用户刚被改过稿，得有据可查
+        if (VS.editSent) paintEdit(vtx, null, '已按更正送出：' + VS.editSent.out);
+        else vtx.textContent = VS.partial || '已送出，等 harness 回复…';
+      } else if (s === 'speaking') {
+        vtx.textContent = VS.lastReply ? VS.lastReply.slice(0, 120) : '';
+      } else {
+        // 划掉重说：一边说一边把改口的痕迹划出来（见 spokenEdit）
+        paintEdit(vtx, VS.editOff ? null : VS.edit, VS.partial || '');
+      }
     }
     paintMic();
   }
@@ -582,7 +678,44 @@
   /// 从 thinking 回到 speaking 时它会自己张开 —— 那一开一合就是这层界面的节奏。
   function foldTarget() { return (VS.state === 'sending' || VS.state === 'thinking') ? 1 : 0; }
 
+  // ---------- 帧循环门控（2.23.0 能耗）--------------------------------------------
+  // 实测背景：主窗口那个 WebContent 静止时仍占 **48% 单核**，sample 栈是整棵 layer 树
+  // 每帧重绘 + 字形查找。查到源头就在这个帧循环 —— 它**没有任何门控**，语音关着
+  // （state=off，HUD 是 visibility:hidden）也照样每帧 draw() 画 canvas、placeHud()
+  // 写 left/bottom，等于每秒 60 次绘制一块看不见的 HUD（还带文字，于是走字形查找）。
+  // 现在：需要时才续帧；不需要时延迟 800ms 收工（等 HUD 淡出落定），改由 500ms
+  // 心跳承担兜底 —— 原来那些「靠帧循环总在跑」的兜底（chat 页 mic 钮重挂）挪进心跳。
+  // 注意：hearing/awake 的自愈判据本身只在非 off 态才有意义，所以停表不会漏它们。
+  var FQ = { queued: false, stopT: 0, hb: 0 };
+
+  function needFrames() {
+    return !!(VS.state && VS.state !== 'off');
+  }
+  function armFrame() {
+    if (FQ.queued) return;
+    FQ.queued = true;
+    requestAnimationFrame(frame);
+  }
+  function frameStart() {
+    if (FQ.stopT) { clearTimeout(FQ.stopT); FQ.stopT = 0; }
+    if (FQ.hb) { clearInterval(FQ.hb); FQ.hb = 0; }
+    armFrame();
+  }
+  function frameStop() {
+    if (FQ.stopT) return;
+    FQ.stopT = setTimeout(function () {
+      FQ.stopT = 0;
+      if (needFrames()) { armFrame(); return; }   // 延迟期里又被唤醒：继续跑
+      if (!FQ.hb) FQ.hb = setInterval(idleBeat, 500);
+    }, 800);
+  }
+  function idleBeat() {
+    if (MODE === 'chat') ensureMicButtonChat();   // React 重渲染摘件兜底（原来挂在帧循环里）
+    if (needFrames()) frameStart();
+  }
+
   function frame(tsMs) {
+    FQ.queued = false;                       // 本帧在执行 → 队列空（门控状态维护）
     var t = tsMs * 0.001;
     var now = Date.now();
 
@@ -605,7 +738,7 @@
     //（空收句漏发、重建吞事件、任何未来的失同步）。停在 awake 是灾难性的：
     // setState 对同态直接跳过，后续唤醒连动画都不播、说话全被吞 ——
     // 用户看到的就是「永远不再发送」。宁可偶尔错杀一次回 ambient，重新喊就醒。
-    if (VS.state === 'awake' && VS.lastVoiceAt > 0 && now - VS.lastVoiceAt > 8000) {
+    if (VS.state === 'awake' && VS.lastVoiceAt > 0 && now - VS.lastVoiceAt > TUNE.stuckMs) {
       setState('ambient', '捕捉超时');
     }
 
@@ -657,7 +790,9 @@
       frame.micAt = now;
       ensureMicButtonChat();
     }
-    requestAnimationFrame(frame);
+    // 按需续帧（2.23.0）：不需要动就停止排队，800ms 后由 frameStop 收工。
+    if (needFrames()) armFrame();
+    else frameStop();
   }
   frame.micAt = 0;
 
@@ -725,47 +860,17 @@
     if (micBtn.parentNode !== trailing) trailing.insertBefore(micBtn, send);
     paintMic();
   }
-  // chat 页的麦克风按钮：嵌进输入框工具行、发送键左边（与主页 dsh 的位置语义一致）。
-  // 用户定稿：不要悬浮在输入框外面 —— 悬浮圆钮那版已废。DeepSeek 的 composer 行是
-  // React 管的：一轮对话结束、输入框清空后，发送区可能整块被重渲染或隐藏，
-  // 我们外来的按钮会跟着被摘走/落进隐藏容器 —— 只比对 parentNode 变没变是兜不住的，
-  // 必须「断连或不可见就强制重挂 + 只认可见容器」。帧循环里另有 700ms 兜底重挂。
-  function elVisible(el) {
-    if (!el) return false;
-    var r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
-  }
+  // chat 页的麦克风钮：**独立悬浮圆钮**，挂 body 下、fixed 锚在输入框上方右侧。
+  // 为什么不嵌进 DeepSeek 的输入框工具行（那版已废）：那行是 React 管的 ——
+  // 位置不可控（用户实测「位置还是不对」），且会话重渲染会把外来按钮一起撕走
+  // （实测「聊完一轮按钮失踪」）。挂 body 之后两件事同时消失：React 碰不到它，
+  // 位置由 placeMicBtnChat 每帧按输入框矩形算。帧循环另有 700ms 兜底重挂。
   function ensureMicButtonChat() {
-    var t = chatComposer();
-    if (!t) return;
     makeMicBtn();
-    micBtn.style.position = 'relative';
-    micBtn.removeAttribute('data-float');
-    var send = chatSendEl(true);
-    var sendOk = send && send.parentElement && elVisible(send.parentElement);
-    var inPlace = micBtn.isConnected && elVisible(micBtn) &&
-      ((sendOk && micBtn.parentNode === send.parentElement) ||
-       (!sendOk && micBtn.parentNode === t.parentElement));
-    if (inPlace) { paintMic(); return; }
-    // 锚点选择：可见的发送键左边 → 输入框自己的包装元素前 → 输入框上层容器。
-    // 绝不落进隐藏容器 —— 那正是「聊完一轮按钮失踪」的根源。
-    var placed = false;
-    if (sendOk) {
-      send.parentElement.insertBefore(micBtn, send);
-      placed = micBtn.isConnected && elVisible(micBtn);
-    }
-    if (!placed && t.parentElement) {
-      t.parentElement.insertBefore(micBtn, t);
-      placed = micBtn.isConnected && elVisible(micBtn);
-    }
-    if (!placed) {
-      var host = t.closest('form,div[class]');
-      if (host) { host.appendChild(micBtn); placed = true; }
-    }
-    if (placed && !ensureMicButtonChat.logged) {
-      ensureMicButtonChat.logged = true;
-      log('chat 麦克风钮挂载: ' + (sendOk && micBtn.parentNode === send.parentElement ? '发送键左侧' : '输入框旁'));
-    }
+    micBtn.style.position = '';              // 清掉 dsh 内嵌用的内联 relative，让 CSS 的 fixed 生效
+    micBtn.setAttribute('data-float', '1');
+    micBtn.classList.toggle('ft-light', !VS.dark);   // 懒创建可能晚于 setTheme，补挂当前主题
+    if (micBtn.parentNode !== document.body) document.body.appendChild(micBtn);
     paintMic();
   }
   function paintMic() {
@@ -1034,8 +1139,17 @@
   // 同步读 value 必然读到旧值 → 误判「发送没生效」；而误判留下两条祸根：
   // ① 那条消息其实发出去了，界面却报错；② 残留文本让下一句走进「草稿保护」
   // 变成只插入不发送 —— 正是「第一条能发、后面全不自动发」的完整因果链。
-  // 所以做成「点击 → 验证 → 回车 → 验证」的接力：每一招都以「输入框真的清空了」
-  // 为唯一成功判据，给足 2.4 秒异步窗口，失败自动换下一招并留日志。
+  // 所以始终以「输入框真的清空了」为唯一成功判据。
+  //
+  // **顺序改成「回车优先、点击兜底」（2026-09-21 日志铁证）**：
+  // 旧流程是「点击 → 等 2.4 秒验证 → 回车」，而实测**每一句**都是
+  //「点击未生效（输入框未清空）→ 兜底回车」，三次发送三次如此，日志里还出现过
+  //「chat 发送键: 未找到」。原因很实在：DeepSeek 的发送键是个 div[role=button]，
+  // 由 React 受控、可用状态飘忽；而回车是编辑器自己的 keydown 处理，原子、不依赖按钮状态，
+  // 实测每次都发得出去 —— 也就是说旧流程让每一句都白等 2.4 秒去试那个必败的招。
+  // 现在：回车 → 0.18 秒确认清空 → 没清空再点按钮 → 再确认。
+  // 快路径 0.2 秒（旧流程 2.6 秒），慢路径与旧流程等长。不会重复发送：
+  // 回车成功后输入框已空，此时点那个按钮是 no-op（没有内容可发）。
   function chatPressEnter() {
     var ec = composer();
     if (!ec) return;
@@ -1056,52 +1170,51 @@
   function chatSendFlow(text, n) {
     if (n === 0) {
       chatSendFlow.stage = 0;
+      chatSendFlow.actedAt = 0;
       // 预存发送前的回复块数：watchReply 的基线必须早于发送动作（见 watchReply 注释）
       waitAndSend.chatBaseRows = assistantRows().length;
     }
+    if (n > 90) { chatSendFail(text); return; }        // 兜底上限（约 11 秒）
+    if (composerText().trim() === '') { chatSent(text); return; }
     var st = chatSendFlow.stage;
+    var since = Date.now() - (chatSendFlow.actedAt || 0);
+
     if (st === 0) {
+      log('chat 发送：按下回车…');
+      chatPressEnter();
+      chatSendFlow.stage = 1; chatSendFlow.actedAt = Date.now();
+      setTimeout(function () { chatSendFlow(text, n + 1); }, 180);
+      return;
+    }
+    if (st === 1 && since > 700) {                    // 回车 0.7 秒没生效 → 换下手
       var b = sendReady();
       if (b) {
+        log('chat 发送：回车未生效 → 点击发送键');
         b.click();
-        chatSendFlow.stage = 1; chatSendFlow.actedAt = Date.now();
-        log('chat 发送：点击发送键，异步验证清空…');
-        setTimeout(function () { chatSendFlow(text, n + 1); }, 350);
-        return;
-      }
-      if (n >= 15) {
-        log('chat 发送：发送键一直不可用 → 直接回车');
+      } else {
+        log('chat 发送：回车未生效且发送键不可用 → 再回车一次');
         chatPressEnter();
-        chatSendFlow.stage = 2; chatSendFlow.actedAt = Date.now();
-        setTimeout(function () { chatSendFlow(text, n + 1); }, 350);
-        return;
       }
-      if (n === 4) { VS.sendStep = '等待发送键就绪…'; VS.paintTag = ''; }
-      if (n === 10) { VS.sendStep = '再试一次…'; VS.paintTag = ''; }
-      setTimeout(function () { chatSendFlow(text, n + 1); }, 100);
-      return;
-    }
-    // stage 1/2：以「输入框清空」为成功判据（清空是异步的，给足 2.4s）
-    if (composerText().trim() === '') {
-      log('送出：' + text);
-      VS.ourDraft = '';
-      VS.sentAt = Date.now();
-      setState('thinking', '已发送');
-      watchReply();
-      return;
-    }
-    if (Date.now() - chatSendFlow.actedAt < 2400) {
+      chatSendFlow.stage = 2; chatSendFlow.actedAt = Date.now();
       setTimeout(function () { chatSendFlow(text, n + 1); }, 200);
       return;
     }
-    if (st === 1) {
-      log('chat 发送：点击未生效（输入框未清空）→ 兜底回车');
-      chatPressEnter();
-      chatSendFlow.stage = 2; chatSendFlow.actedAt = Date.now();
-      setTimeout(function () { chatSendFlow(text, n + 1); }, 350);
-      return;
-    }
-    log('发送失败：点击与回车都未生效（输入框未清空），已清空残留');
+    if (st === 2 && since > 2400) { chatSendFail(text); return; }
+    if (n === 8) { VS.sendStep = '正在送出…'; VS.paintTag = ''; }
+    setTimeout(function () { chatSendFlow(text, n + 1); }, 120);
+  }
+
+  /// 发送成功：唯一判据是「输入框真的清空了」—— 点没点过、按没按过都不算数。
+  function chatSent(text) {
+    log('送出：' + text);
+    VS.ourDraft = '';
+    VS.sentAt = Date.now();
+    setState('thinking', '已发送');
+    watchReply();
+  }
+
+  function chatSendFail(text) {
+    log('发送失败：回车与点击都未生效（输入框未清空），已清空残留');
     chatClearComposer();
     VS.ourDraft = '';
     VS.errorMsg = '发送没生效，请再试一次';
@@ -1111,6 +1224,28 @@
 
   function deliver(text) {
     if (!text) return;
+    // 口语自纠：把「说出去的话」变成「想说的话」。显示与发送同源 ——
+    // 划掉的绝不送出、没划掉的一个不丢；判不准时（suggest）原话照发，绝不自作主张。
+    var ed = spokenEdit(text);
+    VS.edit = ed;
+    var how = '';
+    if (ed && !VS.editOff) {
+      if (VS.editForce === 'cut' && ed.cutText) { text = ed.cutText; how = '手动改用更正段'; }
+      else if (ed.mode === 'applied' && ed.text) { text = ed.text; how = '自动撤回'; }
+    }
+    if (how) {
+      var cuts = [];
+      for (var q = 0; q < ed.segs.length; q++) if (ed.segs[q].retract) cuts.push(ed.segs[q].retract);
+      var cutSum = cuts.join('｜') || '(整段)';
+      log('口语自纠[' + ed.rule + '/' + ed.conf + '/' + ed.cue + '/' + how + ']：撤回「' +
+          cutSum + '」→ 送出「' + text + '」');
+      VS.editSent = { raw: ed.raw, out: text, cut: cutSum };
+    } else {
+      if (ed && ed.mode === 'suggest') {
+        log('口语自纠[' + ed.cue + ']：认出改口但撤回范围看不准 → 原话送出，HUD 留一键出口');
+      }
+      VS.editSent = null;
+    }
     var existing = composerText().trim();
     // chat 页：残留的若是我们自己上次没送出去的识别稿，清掉照常发送，
     // 绝不能误入下面的「草稿保护」—— 那会把后续每一句都拦成只插入不发送。
@@ -1284,7 +1419,11 @@
   var zhVoices = [];
   // 内部可调参数集中一处（不落盘、不进设置面板）：
   // 看门狗要能在无头实证里几百毫秒内验出来，而不是真等两分钟。
-  var TUNE = { msPerChar: 230, minSpeakMs: 4000, speakGraceMs: 3500, restartDelayMs: 60 };
+  // stuckMs：捕捉态「完全没有任何语音活动」多久算卡死（帧循环里的自愈看门狗用）。
+  // **这个默认值以前是缺的**（2026-09-21 查出）：`TUNE.stuckMs` 从未定义，
+  // 于是 `now - lastVoiceAt > undefined` 恒为 false —— 自愈看门狗在生产里一次都没生效过，
+  // 只有回归台临时 tune({stuckMs:300}) 时才活。补上真实默认值，让线上也有这条路。
+  var TUNE = { msPerChar: 230, minSpeakMs: 4000, speakGraceMs: 3500, restartDelayMs: 60, stuckMs: 6000 };
   function refreshVoices() {
     if (!tts) return;
     var all = tts.getVoices() || [];
@@ -1382,6 +1521,234 @@
     if (!quiet && VS.state === 'speaking') setState(prefs.on ? 'ambient' : 'off', '停止朗读');
   }
 
+  // ---------- 口语自纠：划掉重说 ----------
+  // 人说话会改口：「周三……不对，周四」。识别器只会把整句老实交上来 —— 每个字都对，
+  // 意思却是错的。这是「响应不准确」里最冤的一种：不是它听错，是它太老实。
+  //
+  // 这里做的是**忠实撤回**，不是「智能改写」：把被改口撤回的那一段划掉、留下更正后的
+  // 说法，并且永远留一个「还原原话」的出口。两条铁律：
+  //   ① 显示必须等于发送 —— 划过删除线的字绝不会出现在送出去的稿里，没划掉的一个不丢；
+  //   ② 猜不准宁可不改 —— 撤回范围不确定时只提示（suggest）、按原话发送，绝不偷偷改写。
+  // 每次判定都留日志（线索/规则/置信度），好按真人语料回头调规则。
+
+  // 线索分强弱。「不对，是…」也用于陈述（「这个不对，是那个」），所以它必须配上
+  // 高置信的撤回方案才敢动；强线索（犹豫音+不对、重说、更正…）才是明确的改口。
+  var EDIT_CUES = [
+    { tag: '犹豫音', strong: true, re: /(?:啊|呃|嗯|哦|哎|诶|唉)\s*[，,]?\s*不对/ },
+    { tag: '重复', strong: true, re: /不对\s*[，,]?\s*不对/ },
+    { tag: '重说', strong: true, re: /(?:(?:不对|不是)\s*[，,]?\s*)?(?:我)?重(?:新)?说(?:一遍|一下|一次)?/ },
+    { tag: '更正', strong: true, re: /(?:更正|纠正|订正)(?:一下|一遍)?/ },
+    { tag: '我说的是', strong: true, re: /(?:^|[，,。；;、\s])我(?:说|讲)的是/ },
+    { tag: '英文改口', strong: true, re: /\b(?:no|wait|sorry)\s*[,，]?\s*i\s+(?:mean|meant)\b/i },
+    { tag: '改口是', strong: false, re: /不对\s*[，,]?\s*(?:我(?:说|讲)的?是|我是说|应该是|是叫|是|改成|改为|换成)/ },
+    // 最常见的形态其实最朴素：「不对，<直接重说>」。它也最容易和「陈述性否定」撞车，
+    // 所以只算弱线索 —— 必须配上高置信的撤回方案（R1/R2 那种「确实在重述」的证据）
+    // 才敢自动改，配上中等置信的从句撤回都要退回 suggest。
+    { tag: '不对重述', strong: false, re: /不对\s*[，,]?/ }
+  ];
+
+  // 同类槽位：改口最常换的就是「时间 / 数量 / 语言」。两侧命中同一类才做局部替换 ——
+  // 这类撤回几乎不会错，是整张规则表里最靠得住的一条。
+  var EDIT_SLOTS = [
+    { cls: 'time', re: /(?:今天|明天|后天|大后天|昨天|前天|今晚|明晚|今早|明早)?(?:上午|下午|晚上|早上|中午|凌晨|傍晚)?(?:\d{1,2}|[一二三四五六七八九十两])[点时](?:\d{1,2}|[一二三四五六七八九十]+)?分?/ },
+    { cls: 'time', re: /(?:这|本|下|上|明|后)(?:周|星期|礼拜)/ },
+    { cls: 'time', re: /(?:这|本|下|上|明|后)?(?:周|星期|礼拜)[一二三四五六日天末]/ },
+    { cls: 'time', re: /(?:今天|明天|后天|大后天|昨天|前天|今晚|明晚|今早|明早)/ },
+    { cls: 'time', re: /(?:\d{1,2}|[一二三四五六七八九十]+)月(?:\d{1,2}|[一二三四五六七八九十]+)[日号]/ },
+    { cls: 'lang', re: /(?:中文|英文|日文|韩文|法文|德文|俄文|西班牙文|日语|英语|汉语|繁体|简体)/ },
+    { cls: 'num',  re: /(?:\d+|[一二三四五六七八九十百千万几两]+)(?:个|条|份|次|遍|页|行|块|元|人|天|小时|分钟|秒|字|篇|张|台|件|封|支|根|瓶|杯|岁|年|度|米|斤|克)/ }
+  ];
+
+  function trimEdges(s) {
+    return String(s == null ? '' : s)
+      .replace(/^[\s，,。.、；;：:！!？?…—\-~]+/, '')
+      .replace(/[\s，,。.、；;：:]+$/, '');
+  }
+  // 更正段常以「是 / 应该是 / 改成 / 翻成」起头 —— 那是连接词，不是内容
+  function stripLead(s) {
+    return trimEdges(s).replace(/^(?:就是|应该是|是叫|说的是|我说的是|是|改成|改为|换成|翻成|译成|变成|变为)\s*/, '');
+  }
+  function commonPrefixLen(a, b) {
+    var n = Math.min(a.length, b.length), i = 0;
+    while (i < n && a.charAt(i) === b.charAt(i)) i++;
+    return i;
+  }
+  /// 取「头部末尾」或「更正段起头」的同类槽位（最长者优先）
+  function slotEdge(s, atEnd) {
+    var best = null;
+    for (var i = 0; i < EDIT_SLOTS.length; i++) {
+      var m;
+      try { m = new RegExp((atEnd ? '' : '^') + EDIT_SLOTS[i].re.source + (atEnd ? '$' : '')).exec(s); }
+      catch (e) { continue; }
+      if (m && m[0] && (!best || m[0].length > best.text.length)) {
+        best = { cls: EDIT_SLOTS[i].cls, text: m[0] };
+      }
+    }
+    return best;
+  }
+  /// 「同一句重述」：更正段与头部末尾对得上（「发给李四」vs「…发给张三」）。
+  /// 至少两个字逐字相同才算证据 —— 够强，才敢把对齐的那一段整段撤回。
+  function boundaryAlign(head, tail) {
+    var maxK = Math.min(head.length, tail.length);
+    for (var k = maxK; k >= 2; k--) {
+      if (commonPrefixLen(head.slice(head.length - k), tail) >= 2) return k;
+    }
+    return 0;
+  }
+  /// 撤回方案。返回 null = 不敢拆（宁可不改）。
+  /// keep=留在稿里的前缀，retract=被划掉的段，fix=接在后面的更正文本，
+  /// drop=整句重述（前面攒的保留段一并作废）。
+  function retractPlan(head, tail) {
+    if (!head || !tail) return null;
+    // R1 整句重述：更正段自己把前半句又说了一遍 → 前文全撤
+    var k = commonPrefixLen(head, tail);
+    if (k >= 3) return { keep: '', retract: head, fix: tail, drop: true, rule: 'R1重述', conf: 'high' };
+    // R2 边界对齐：头部末尾与更正段起头对上 ≥2 字 → 撤回对齐的那一段
+    var bk = boundaryAlign(head, tail);
+    if (bk > 0) {
+      return {
+        keep: head.slice(0, head.length - bk), retract: head.slice(head.length - bk),
+        fix: tail, drop: false, rule: 'R2对齐', conf: 'high'
+      };
+    }
+    // R3 同类槽位：末尾一个「时间/数量/语言」换成同类的另一个。
+    // 只在更正段「基本就是那个值」时用（免得把一次整句重述误当成换个词），
+    // 槽位不在更正段开头时只取那个值 —— 否则会把「翻成」这类连接词重复接一遍。
+    var a = slotEdge(head, true), b = slotEdge(tail, false) || slotEdge(tail, true);
+    if (a && b && a.cls === b.cls && tail.length <= b.text.length + 4) {
+      var fixT = b.at > 0 ? (b.text + tail.slice(b.at + b.text.length)) : tail;
+      return {
+        keep: head.slice(0, head.length - a.text.length), retract: a.text,
+        fix: fixT, drop: false, rule: 'R3同类', conf: 'high'
+      };
+    }
+    // R4 从句撤回：从头部最后一个标点之后算起（撤掉一整个小句）
+    var cut = Math.max(head.lastIndexOf('，'), head.lastIndexOf(','), head.lastIndexOf('。'),
+                       head.lastIndexOf('；'), head.lastIndexOf(';'), head.lastIndexOf('、'),
+                       head.lastIndexOf('！'), head.lastIndexOf('？'));
+    if (cut >= 0 && cut + 1 < head.length) {
+      return {
+        keep: head.slice(0, cut + 1), retract: head.slice(cut + 1),
+        fix: tail, drop: false, rule: 'R4从句', conf: 'mid'
+      };
+    }
+    return null;
+  }
+  /// 找最靠前的那条改口线索（同位置时强线索优先）
+  function findCue(s) {
+    var best = null;
+    for (var i = 0; i < EDIT_CUES.length; i++) {
+      var m = EDIT_CUES[i].re.exec(s);
+      if (!m || !m[0]) continue;
+      var at = m.index, end = m.index + m[0].length;
+      if (!best || at < best.at || (at === best.at && EDIT_CUES[i].strong && !best.strong)) {
+        best = { at: at, end: end, tag: EDIT_CUES[i].tag, strong: EDIT_CUES[i].strong };
+      }
+    }
+    return best;
+  }
+
+  /// 把一句话拆成「撤回 + 更正」。返回 null 表示没有改口（绝大多数情况）。
+  /// mode='applied' → text 就是送出的稿；mode='suggest' → 不敢改，送原话，cutText 是手动候选。
+  function spokenEdit(raw) {
+    var s = String(raw || '');
+    if (!s) return null;
+    var segs = [], comp = [], rest = s, tailText = '', tag = '', strong = false;
+    var minConf = 'high', bailed = false, guard = 0, rules = [];
+    while (guard++ < 4) {                        // 连改两次口就折两轮（最多 4 轮防失控）
+      var c = findCue(rest);
+      if (!c) break;
+      var head = trimEdges(rest.slice(0, c.at));
+      var tail = stripLead(rest.slice(c.end));
+      // 「不对，我重说，X」：两个线索之间一个字都没有，前一个只是作废声明 → 直接跳过。
+      // 更正段里若还有一次改口（「周三不对周四，啊不对是周五」），本轮只针对它之前那一段 ——
+      // 否则撤回目标会被后面那次改口的内容稀释，短句替换就判不出来了。
+      var sk = 0, nx = null;
+      while (sk++ < 3 && tail) {
+        var c2 = findCue(tail);
+        if (!c2) { nx = null; break; }
+        if (c2.at > 0) { nx = c2; break; }
+        tail = stripLead(tail.slice(c2.end));
+      }
+      // 没有前文就没有「撤回」可言 ——「不对，是周四」是回答，不是改口
+      if (!head || !tail) break;
+      if (!tag) { tag = c.tag; strong = c.strong; }
+      var cueTail = nx ? trimEdges(tail.slice(0, nx.at)) : tail;
+      if (!cueTail) break;
+      var plan = retractPlan(head, cueTail);
+      if (!plan) { bailed = true; tailText = tail; break; }
+      // 弱线索 + 中等置信的撤回（R4 从句）→ 证据不够，退回「只提示不改写」
+      if (!c.strong && plan.conf !== 'high') { bailed = true; tailText = tail; break; }
+      if (plan.conf === 'mid') minConf = 'mid';
+      rules.push(plan.rule);
+      segs.push({ keep: plan.keep, retract: plan.retract });
+      if (plan.drop) comp.length = 0; else comp.push(plan.keep);
+      rest = tail; tailText = tail;
+    }
+    if (!segs.length) {
+      // 认出了改口、却拆不出撤回范围：只有强线索才值得提示（弱线索多半是陈述）
+      if (bailed && strong && tailText) {
+        return {
+          hit: true, mode: 'suggest', raw: s, cue: tag, rule: 'R5未定', conf: 'low',
+          cutText: trimEdges(comp.join('') + tailText), segs: [], fix: ''
+        };
+      }
+      return null;
+    }
+    var fixed = trimEdges(comp.join('') + rest);
+    if (!fixed) return null;
+    return {
+      hit: true, mode: 'applied', raw: s, cue: tag, rule: rules.join('+'), conf: minConf,
+      segs: segs, fix: rest, text: fixed, cutText: fixed
+    };
+  }
+
+  /// 渲染一句话：撤回段划掉、更正段点亮。用 DOM 节点而不是拼 HTML ——
+  /// 这是用户自己说的话，任何字符串拼 HTML 都是注入面。
+  function paintEdit(el, ed, raw) {
+    el.textContent = '';
+    if (!ed || !ed.hit) { el.textContent = raw; return; }
+    if (ed.mode === 'suggest') {
+      el.appendChild(document.createTextNode(raw + '  '));
+      var ask = document.createElement('button');
+      ask.className = 'ft-ask';
+      ask.type = 'button';
+      ask.textContent = '改用后半句';
+      ask.title = '像是改口，但撤回范围看不准 · 点一下只用更正的那半句';
+      ask.onclick = function () { VS.editForce = 'cut'; VS.paintTag = ''; paint(); };
+      el.appendChild(ask);
+      return;
+    }
+    for (var i = 0; i < ed.segs.length; i++) {
+      if (ed.segs[i].keep) el.appendChild(document.createTextNode(ed.segs[i].keep));
+      if (ed.segs[i].retract) {
+        var cut = document.createElement('span');
+        cut.className = 'ft-cut';
+        cut.textContent = ed.segs[i].retract;
+        cut.title = '这段被你的改口撤回了 · 点一下改成按原话发送';
+        cut.onclick = revertEdit;
+        el.appendChild(cut);
+      }
+      var ar = document.createElement('span');
+      ar.className = 'ft-arrow';
+      ar.textContent = '\u21e2';
+      el.appendChild(ar);
+    }
+    var fx = document.createElement('span');
+    fx.className = 'ft-fix';
+    fx.textContent = ed.fix;
+    el.appendChild(fx);
+  }
+  /// 「还原原话」：只对这一句生效（下一句重新按规则来）。
+  /// 它是发送前唯一的后悔药，所以必须立刻反映到显示上 —— 显示即承诺。
+  function revertEdit() {
+    if (!VS.edit) return;
+    VS.editOff = true; VS.editForce = '';
+    log('口语自纠：用户还原原话（本句不再改写）');
+    VS.paintTag = '';
+    paint();
+  }
+
   // ---------- 原生回调（window.__ftVoice.*）----------
   window.__ftVoice = {
     levels: function (arr) {
@@ -1406,13 +1773,20 @@
     },
     partial: function (text, isFinal) {
       VS.partial = text || '';
+      // 口语自纠：一边说一边就把改口的痕迹划出来（见 spokenEdit）。
+      // 定稿还会在 deliver() 里重算一次 —— partial 是会抖的中间产物，
+      // 只有最终稿作数，所以这里算出来纯粹是为了让用户「看得见」。
+      if (!VS.editOff) VS.edit = spokenEdit(VS.partial);
       // 空收句：原生的「白听了」信号（isFinal 且没字，捕捉里只有唤醒词残渣）。
       // 必须回 ambient —— 少了这句，状态机卡死在 awake，而 setState 对同态是
       // 直接跳过的：之后所有唤醒命中连动画都不播，说话自然永远不再发送
       // （2026-09-20 实测「第一轮能发，之后全哑」的根因）。
       if (isFinal && !(text && text.trim())) {
-        if (VS.state === 'awake') notice('没听清，再喊我一声');
-        else setState(prefs.on ? 'ambient' : 'off', '空句子');
+        // 提示复用 setState 的第二参（HUD 文案），不要另造通知函数 ——
+        // 早先这里写了个未定义的 notice()，异常抛在原生回调链里：解卡这句
+        // 自己先炸了，状态机照样停在 awake，且异常在宿主里几乎无声。
+        var why = VS.state === 'awake' ? '没听清，再喊我一声' : '空句子';
+        setState(prefs.on ? 'ambient' : 'off', why);
         return;
       }
       VS.lastVoiceAt = Date.now();
@@ -1436,6 +1810,8 @@
     },
     wake: function (word) {
       VS.partial = '';
+      // 新的一句，自纠判定与「已还原」一起归零 —— 上一句的选择不该粘到这一句
+      VS.edit = null; VS.editOff = false; VS.editForce = ''; VS.editSent = null;
       VS.lastVoiceAt = Date.now();
       if (Date.now() - VS.lastSendAt < 1500) return;     // 刚说完一句，别被尾音二次触发
       // 顺序要紧：先把 HUD 撑到「已唤醒」的尺寸，再放光扫/环/回弹。
@@ -1446,6 +1822,8 @@
     },
     final: function (text) {
       if (!text) { setState(prefs.on ? 'ambient' : 'off', '空句子'); return; }
+      // 定稿重算：partial 是易变的中间产物，只有最终稿作数（送出去的按这一份）
+      VS.edit = VS.editOff ? null : spokenEdit(text);
       deliver(text);
     },
     bargeIn: function () {
@@ -1513,6 +1891,7 @@
     setTheme: function (dark) {
       VS.dark = !(dark === false || dark === 'false');
       if (hud) hud.classList.toggle('ft-light', !VS.dark);
+      if (micBtn) micBtn.classList.toggle('ft-light', !VS.dark);   // 悬浮钮也要跟着换装
       return VS.dark;
     },
     /// 页面切走（原生 toggleChatMode 调）：停朗读、清守护、把引擎交出去。
@@ -1745,6 +2124,10 @@
         wakeClass: hud ? hud.classList.contains('ft-wake') : false,
         progMode: hud ? hud.getAttribute('data-prog') : null,
         sendStep: VS.sendStep,
+        editMode: VS.edit ? VS.edit.mode : null,
+        editRule: VS.edit ? VS.edit.rule : null,
+        editOff: VS.editOff, editForce: VS.editForce,
+        editSent: VS.editSent,
         followLeft: followLeft(), inFollowUp: inFollowUp(),
         bands: Array.prototype.slice.call(VS.cur).map(function (v) { return Math.round(v * 1000) / 1000; }),
         voices: zhVoices.length, error: VS.errorMsg
@@ -1758,6 +2141,18 @@
     burst: function () { burst(); return true; },
     // 无头实证用：不经过麦克风，直接把文字喂进最后的「送出」环节
     feed: function (text) { deliver(text); return VS.state; },
+    /// 无头实证用：直接问「口语自纠」引擎这句话会怎么处理。
+    /// 语法门靠它做表驱动穷举 —— 尤其要盯住「陈述性否定」的假阳性
+    /// （「这个不对，是那个」是人话，不是改口）。
+    spokenEdit: function (t) {
+      var ed = spokenEdit(t);
+      if (!ed) return null;
+      return {
+        hit: ed.hit, mode: ed.mode, rule: ed.rule, conf: ed.conf, cue: ed.cue,
+        text: ed.text || '', cutText: ed.cutText || '', fix: ed.fix || '',
+        segs: (ed.segs || []).map(function (g) { return { keep: g.keep, retract: g.retract }; })
+      };
+    },
     // 真机诊断用：读/清输入框（清空只在「内容确实是上次遗留的测试句」时才做）
     composer: function () { return composerText(); },
     clearComposer: function () {
@@ -1798,6 +2193,8 @@
     stop: function () { stopSpeaking(true); return VS.state; },
     reply: function () { return replyText(); },
     setPrefs: function (o) { for (var k in o) prefs[k] = o[k]; savePrefs(); paint(); return prefs; },
+    // 帧循环门控快照（2.23.0 能耗诊断）：off 且 hb=true 表示已停表、只走 500ms 心跳
+    frameState: function () { return { state: VS.state, queued: FQ.queued, hb: !!FQ.hb, stopPending: !!FQ.stopT, need: needFrames() }; },
     // 只改内存、不落 localStorage：诊断期间临时静音用，不动用户的偏好
     setPrefsVolatile: function (o) { for (var k in o) prefs[k] = o[k]; paint(); return prefs; },
     // 无头实证用：把看门狗的时间参数调小，几百毫秒内就能验出兜底路径
@@ -1818,7 +2215,7 @@
     }
     setState('off');
     paintMic();
-    requestAnimationFrame(frame);
+    frameStart();                          // 门控启动（2.23.0）
 
     var pending = false;
     function sweep() {

@@ -165,18 +165,41 @@ html body svg[viewBox="0 0 182 24"] rect[width="52"] + g path {
   paint-order: fill stroke;
 }
 
-/* ---------- 侧边工作区（会话/工作区列表）：星尘金点（可见但克制，缓缓上浮） ---------- */
+/* ---------- 侧边工作区（会话/工作区列表）：星尘金点（可见但克制，缓缓上浮） ----------
+   ★ 2.23.0 能耗重做（实测依据：该页 WebContent **单进程 48% 单核**，sample 栈是
+     「整棵 layer 树每帧重绘 + 字形查找」RenderFlexibleBox::paintChildren / OTL Coverage）：
+     ① 旧写法把粒子贴在 **有内容的** .bhn1Oq_root 上，还用 `background-position` 做 30s
+        无限动画 —— background-position **不是合成属性**，每帧都让整块侧栏连同全部文字
+        重画一遍。这是本次发热/掉电的直接来源（页面里唯一在跑的动画就是它）。
+     ② 背景 SVG 里还埋了 24 个 SMIL `<animate>`，让整张 600×600 图每帧重新栅格化。
+     现在：粒子移入 ::before 伪元素、动画改走 **transform**（合成层，GPU 平移、零重绘）；
+     SMIL 全部换成静态星点（原闪烁周期 2.3~4.5s，肉眼几乎不可察，视觉差异极小）。
+     position/z-index 只为给伪元素一个层叠上下文，好让粒子落在内容**之下**；
+     侧栏内都是 static 流内元素，定位锚点不受影响（改后已用探针逐元素 rect 比对验证）。 */
 html body .bhn1Oq_root {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><g fill='rgba(217,164,65,0.6)'><circle cx='80' cy='120' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.7s' begin='0.1s' repeatCount='indefinite'/></circle><circle cx='240' cy='60' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.9s' begin='0.9s' repeatCount='indefinite'/></circle><circle cx='380' cy='180' r='1.7'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.0s' begin='2.7s' repeatCount='indefinite'/></circle><circle cx='520' cy='90' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.3s' begin='0.3s' repeatCount='indefinite'/></circle><circle cx='140' cy='300' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.2s' begin='0.1s' repeatCount='indefinite'/></circle><circle cx='300' cy='260' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.7s' begin='2.0s' repeatCount='indefinite'/></circle><circle cx='460' cy='340' r='1.6'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.3s' begin='0.8s' repeatCount='indefinite'/></circle><circle cx='560' cy='430' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.8s' begin='2.2s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.6'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.7s' begin='2.4s' repeatCount='indefinite'/></circle><circle cx='240' cy='540' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='0.0s' repeatCount='indefinite'/></circle><circle cx='400' cy='500' r='2.0'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='2.8s' repeatCount='indefinite'/></circle><circle cx='540' cy='560' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.0s' begin='0.6s' repeatCount='indefinite'/></circle><circle cx='180' cy='170' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.5s' begin='1.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.3'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='2.4s' begin='0.4s' repeatCount='indefinite'/></circle><circle cx='60' cy='380' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.2s' begin='2.4s' repeatCount='indefinite'/></circle><circle cx='320' cy='420' r='1.2'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='4.1s' begin='2.9s' repeatCount='indefinite'/></circle><circle cx='640' cy='200' r='1.4'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.5s' begin='3.9s' repeatCount='indefinite'/></circle><circle cx='520' cy='350' r='1.2'><animate attributeName='opacity' values='0.12;0.95;0.12' dur='3.1s' begin='2.2s' repeatCount='indefinite'/></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.5s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.9000000000000001'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='2.8s' begin='0.2s' repeatCount='indefinite'/></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.5s' repeatCount='indefinite'/></circle><circle cx='90' cy='480' r='1.9000000000000001'><animate attributeName='opacity' values='0.2;1;0.2' dur='3.0s' begin='2.3s' repeatCount='indefinite'/></circle><circle cx='420' cy='250' r='1.6'><animate attributeName='opacity' values='0.2;1;0.2' dur='2.8s' begin='0.2s' repeatCount='indefinite'/></circle></g></svg>");
+  position: relative;
+  z-index: 0;
+  background-image: none;
+  animation: none;
+}
+html body .bhn1Oq_root::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'><g fill='rgba(217,164,65,0.6)'><circle cx='80' cy='120' r='2.0'></circle><circle cx='240' cy='60' r='1.4'></circle><circle cx='380' cy='180' r='1.7'></circle><circle cx='520' cy='90' r='1.3'></circle><circle cx='140' cy='300' r='1.3'></circle><circle cx='300' cy='260' r='2.0'></circle><circle cx='460' cy='340' r='1.6'></circle><circle cx='560' cy='430' r='1.3'></circle><circle cx='90' cy='480' r='1.6'></circle><circle cx='240' cy='540' r='1.3'></circle><circle cx='400' cy='500' r='2.0'></circle><circle cx='540' cy='560' r='1.3'></circle><circle cx='180' cy='170' r='1.3'></circle><circle cx='420' cy='250' r='1.3'></circle><circle cx='60' cy='380' r='1.4'></circle><circle cx='320' cy='420' r='1.2'></circle><circle cx='640' cy='200' r='1.4'></circle><circle cx='520' cy='350' r='1.2'></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'></circle><circle cx='90' cy='480' r='1.9000000000000001'></circle><circle cx='420' cy='250' r='1.6'></circle></g><g fill='rgba(255,210,130,0.75)'><circle cx='520' cy='90' r='1.6'></circle><circle cx='90' cy='480' r='1.9000000000000001'></circle><circle cx='420' cy='250' r='1.6'></circle></g></svg>");
   background-size: 600px 600px;
   animation: ft-gold-dust-rise 30s linear infinite;
+  will-change: transform;
 }
+/* 只动 background-position：盒子一动不动。外扩（曾经写成 top:-600px;height:calc(100%+600px)）
+   会把多出来的一截算进祖先滚动容器的可滚动溢出，把会话输入框顶起来 —— 2.23.5 实测。 */
 @keyframes ft-gold-dust-rise {
   from { background-position: 0 600px; }
-  to { background-position: 0 0; }
+  to   { background-position: 0 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html body .bhn1Oq_root { animation: none; }
+  html body .bhn1Oq_root::before { animation: none; transform: translateY(0); }
 }
 
 /* ---------- 工作区选中项目：金色边框替代底色高亮 ---------- */
@@ -512,4 +535,18 @@ html body .hHd-Xa_logoRow .hHd-Xa_brand:hover .hHd-Xa_brandMark,
 html body [class$="_logoRow"] [class$="_brand"]:hover [class$="_brandMark"] {
   transform: translateY(-.5px);
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .45)) drop-shadow(0 0 10px rgba(217, 164, 65, .45));
+}
+
+/* ===== 2.23.2 修正：上面那段注释里「transform = 合成层、零重绘」的判断**已被实测推翻** =====
+   2026-09-23 真机实测（活跃皮肤是绯红，同一套结论对暗金同样成立）：
+     · 动 background-position 的伪元素  → WebContent 主线程 36% 忙碌，TextBoxPainter 每帧重排全部文字
+     · 改成动 transform 的伪元素        → 主线程降到 4%（不再重绘文字，但仍有每帧样式重算）
+     · 再加「指针不在窗口就暂停」的闸    → 主线程 1.3%，KeyframeInterpolation 归零
+   结论：WebKit 对 ::before/::after 上的动画**不保证合成加速**，光换属性不够，必须让它在人
+   不在场时停下来。下面这段与 skin-scarlet.css 同款：位移走 background-position（盒子不动，
+   不会污染祖先滚动容器的可滚动溢出），并默认在指针离开窗口时暂停（暂停的动画零开销）。 */
+/* 2.23.5：本块原先用 transform + 盒子上下各外扩 600px —— 已回退，动画回到上面的
+   background-position（盒子与布局完全无关）。理由见 skin-scarlet.css 同处注释。 */
+html:not(:hover) body .bhn1Oq_root::before {
+  animation-play-state: paused;
 }

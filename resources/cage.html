@@ -1,0 +1,220 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  /* ── 尺寸：按 150×78 设计稿绘制，外层 stage 按视口等比缩放（双保险）─────────
+     原生把 WebView 尺寸设成 180×94（并顺手设了 pageZoom）。但 pageZoom 是否真被
+     WebKit 采纳没有便宜的验证手段 —— 万一没生效，inset:0 的元素会去铺满 180×94，
+     罩子被**拉伸变形**（圆角不再等比，穹顶两侧冒出直线段），而这类错误只有肉眼能发现。
+     所以这里自己兜：stage 固定 150×78，按视口等比 scale。
+       pageZoom 生效 → 视口 = 150 CSS px → k = 1（恒等，零缩放，最清晰）
+       pageZoom 不生效 → 视口 = 180 → k = 1.2（补上）
+     后果是「罩子该多大」永远只改原生一个数（cageSize），几何比例不会走形。 */
+  #ft-cage-stage {
+    position: absolute; left: 0; top: 0; width: 150px; height: 78px;
+    transform-origin: 0 0;
+  }
+  /* ── 玻璃罩（回笼）· 2.23.7 = B 的玻璃物理 + G 的内嵌结构，恒显完整形态 ──────
+     旧画法（≤2.23.5）：1px 高饱和实线（吃 --ft-accent-softer #ff4757）+ 顶到底的
+     均匀白渐变。读起来是一条 UI 选中框，不是玻璃。根因是「均匀描边」——那正是系统
+     里「被选中的框」的语言；玻璃的轮廓从来不是一条线，是明暗的分布。换色救不回来。
+
+     G（内嵌结构）是「不违和」的根：违和来自「一件东西被扣在界面上」。所以罩子不再
+     凭空立在页面里，而是从**台面上一道凿出来的浅坑**里长出来 ——
+       · .slot 浅坑：恒在，上缘随穹顶的弧、下缘小圆角（不是一条胶囊）。坑口倒角被光
+         擦亮、上沿内侧暗（远侧内壁背光）、下沿内侧亮（近侧内壁反光）—— 这一对正是
+         「凹」的通用语言，任何底色上都读得出；坑底一点皮肤色余温（accent 唯一的
+         落点，绝不做轮廓）
+       · 罩子全程完整显形（见下）
+       · 开门 = 玻璃整体消散，坑留下（那是它的位子）
+
+     B（玻璃物理）= 三笔静态几何（零动画、零每帧成本 —— 能耗刚压下来，不能反悔）：
+     ① 两片贴壁的竖反射（柱面那一小条，不是发光柱）② 弧顶贴边亮带 ③ 壁厚内弧。
+     罩内**自顶向下极轻地渐暗**（背光）—— 玻璃在暗底上不是发光体，中心必须与背景
+     几乎无差别，只有边缘亮；所以内暗只给到「刚好读得出罩子存在」。
+     鱼是独立浮层、永远画在本页之上，玻璃挡不住它 —— 「被关住」全靠明暗暗示。
+
+     ★ 2.23.7（用户定）：**空置也保持完整形态**
+     前一版是「空置只剩一道坑、鱼进笼玻璃才升起」。实机上，空着的时候读作
+     「界面破了个口 / 一个空槽位」，比罩子本身更违和 —— 罩子本就该一直在那儿，
+     鱼进去只是「多了个住户」。所以三笔与坑全程 opacity:1，几何不随占用变化；
+     data-occupied 只让**浅坑退位**（鱼占了那个位子 → 坑底被挡住）。
+     只有「开门」还会让玻璃消散：那是真语义（鱼出笼），保留。
+     ⚠️ 形态常显 ≠ 可以加戏：这里仍然一条动画都不加（能耗是刚压下来的）。 */
+  .ft-dp-cage {
+    position: absolute; inset: 0; pointer-events: none;
+    /* 暗底（绯红一系）：亮部一律中性暖白 —— 玻璃的亮不是强调色（旧版拿 #ff4757
+       描边正是败因）；暗部才是「凹」与「背光」的载体 */
+    --hl:        rgba(255,249,241,.30);   /* 弧顶亮带 + 侧壁竖反射 */
+    --hl-inner:  rgba(255,249,241,.075);  /* 壁厚内弧（暗底上：极淡的一条） */
+    --hl-thin:   rgba(255,255,255,.05);
+    --skrim-a:   rgba(0,0,0,.03);         /* 罩内背光（顶 → 底渐重，只给到刚好读出罩子） */
+    --skrim-b:   rgba(0,0,0,.22);
+    --bevel:     rgba(255,249,241,.20);   /* 坑口倒角 */
+    --slot-dark: rgba(0,0,0,.55);         /* 坑上沿内侧：远侧内壁背光 */
+    --slot-light: rgba(255,249,241,.24);  /* 坑下沿内侧：近侧内壁反光 */
+  }
+  /* 浅底（浅色皮肤）：白线在浅底上看不见 —— 亮部翻暖深色；壁厚改成「外暗线 +
+     内白亮」两条（浅底上玻璃的边正是这样读的）；罩内压暗要极轻，重了就糊成磨砂 */
+  html[data-light="1"] .ft-dp-cage {
+    --hl:        rgba(66,46,34,.38);
+    --hl-inner:  rgba(255,255,255,.70);
+    --hl-thin:   rgba(60,40,30,.05);
+    --skrim-a:   rgba(84,58,44,.015);
+    --skrim-b:   rgba(84,58,44,.09);
+    --bevel:     rgba(66,46,34,.24);
+    --slot-dark: rgba(70,48,36,.28);
+    --slot-light: rgba(255,255,255,.70);
+  }
+
+  /* ── G：台面上凿出的浅坑（恒在）────────────────────────────────────
+     上缘随穹顶的弧（70px/22px）、下缘小圆角 → 读作「穹顶坐进去的那个位子」，
+     而不是一条胶囊。 */
+  .slot {
+    position: absolute; left: 5px; right: 5px; bottom: 1px; height: 16px;
+    border-radius: 70px 70px 8px 8px / 22px 22px 8px 8px;
+    border-top: 1px solid var(--bevel);
+    background:
+      radial-gradient(42% 66% at 50% 120%, var(--ft-accent-soft, rgba(217,164,65,.4)), rgba(255,255,255,0) 66%),
+      linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.16) 60%, rgba(0,0,0,.22));
+    box-shadow:
+      inset 0 2px 2.6px -1.4px var(--slot-dark),
+      inset 0 -1.4px 0 var(--slot-light),
+      inset 2px 0 3px -2px var(--slot-dark),
+      inset -2px 0 3px -2px var(--slot-dark);
+    transition: opacity .34s ease;
+  }
+
+  /* ── B：玻璃罩本体（只负责轮廓/裁剪/门动画，自己不画东西）────────────── */
+  .glass {
+    position: absolute; inset: 0; overflow: hidden;
+    border-radius: 75px 75px 8px 8px / 62px 62px 8px 8px;
+    transform-origin: 50% 100%;
+    transition: opacity .42s ease-out, transform .42s cubic-bezier(.4, 0, .2, 1);
+  }
+  .glass > i { position: absolute; display: block; transition: opacity .34s ease; }
+
+  /* ① 两片贴壁竖反射（窄、贴侧壁、中段）+ 外缘极淡一丝 + 罩内自顶向下极轻渐暗 */
+  .walls {
+    inset: 0;
+    background:
+      radial-gradient(ellipse 5px 18px at 12px 48px, var(--hl), rgba(255,255,255,0) 74%),
+      radial-gradient(ellipse 5px 18px at 138px 48px, var(--hl), rgba(255,255,255,0) 74%),
+      radial-gradient(ellipse 3.5px 16px at 5px 52px, var(--hl-thin), rgba(255,255,255,0) 76%),
+      radial-gradient(ellipse 3.5px 16px at 145px 52px, var(--hl-thin), rgba(255,255,255,0) 76%),
+      linear-gradient(180deg, var(--skrim-a), var(--skrim-b) 62%, var(--skrim-b));
+  }
+  /* ② 弧顶贴边亮带（border-top 吃圆角 → 沿拱顶弯曲，两侧自然收细） */
+  .rim {
+    inset: 0; border-radius: inherit;
+    border-top: 1.5px solid var(--hl);
+  }
+  /* ③ 壁厚内弧：外壁之内再一条弧，两条之间就是玻璃的厚度 */
+  .thick {
+    inset: 2px 2px 5px;
+    border-radius: 73px 73px 6px 6px / 60px 60px 6px 6px;
+    border-top: 1px solid var(--hl-inner);
+    box-shadow: inset 0 0 0 .5px var(--hl-thin);
+  }
+
+  /* ── 呼吸辉光（2.24.0）：全页唯一的一条动画，且**只在有住户时声明** ──────
+     把 2.17.3 主动去掉的那道脉动光请回来，但换了实现：只动 **opacity**（纯合成属性），
+     不重绘、不动盒子 —— 所以绝无可能重演 2.23.2 那次「伪元素外扩污染祖先滚动溢出、
+     输入框凭空浮起 280px」的事故（那次就是把动画做在 background-position/size 上）。
+     亮部仍是中性暖白一系里掺一点皮肤色，不是强调色描边。
+     空置时连 animation 都不挂（不是 paused，是压根不声明）→ 合成器静默，能耗为 0；
+     鱼进笼才呼吸 —— 那时罩子本来就该是活的。幅度压得很小（.10 → .30）：
+     「有呼吸」和「在闪」是两件事，别抢戏。 */
+  .breath {
+    position: absolute; inset: -3px;
+    border-radius: 78px 78px 10px 10px / 64px 64px 10px 10px;
+    background: radial-gradient(58% 62% at 50% 44%, var(--ft-accent-soft, rgba(217,164,65,.4)), rgba(255,255,255,0) 72%);
+    filter: blur(6px);
+    opacity: 0; pointer-events: none; will-change: opacity;
+    transition: opacity .42s ease-out;
+  }
+  .ft-dp-cage[data-occupied="1"] .breath { animation: ft-cage-breath 7.6s ease-in-out infinite; }
+  @keyframes ft-cage-breath {
+    0%, 100% { opacity: .10; }
+    50%      { opacity: .30; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ft-dp-cage[data-occupied="1"] .breath { animation: none; opacity: .18; }
+  }
+
+  /* ── 显隐：罩子全程完整，只有「开门」才消散 ─────────────────────────── */
+  .walls, .rim, .thick { opacity: 1; }
+  .slot { opacity: 1; }
+
+  /* 开门 = 玻璃消散（语义不变；浅坑留下 —— 那是它的位子）。 */
+  .ft-dp-cage[data-open="1"] .glass { opacity: 0; transform: scaleY(.5); }
+
+  /* 占用：鱼坐在坑里 → 坑底被它挡住，坑退下去当背景（罩子本体不动）。
+     宿主仍上报 occupied，这里只留这一笔，形态差为零。 */
+  .ft-dp-cage[data-occupied="1"] .slot { opacity: .55; }
+
+  .ft-dp-cage.shake { animation: ft-cage-shake .42s ease; }
+  @keyframes ft-cage-shake {
+    0%,100% { transform: translate(0,0); } 20% { transform: translate(-2.5px,0); }
+    45% { transform: translate(2.5px,-1px); } 70% { transform: translate(-1.5px,1px); }
+  }
+</style>
+</head>
+<body>
+<div id="ft-cage-stage">
+  <div class="ft-dp-cage" data-open="0" data-occupied="0">
+    <i class="slot"></i>
+    <div class="glass"><i class="breath"></i><i class="walls"></i><i class="rim"></i><i class="thick"></i></div>
+  </div>
+</div>
+<script>
+(function () {
+  var DESIGN_W = 150, DESIGN_H = 78;          /* 设计稿尺寸（所有 CSS 像素都按它写）*/
+  var stage = document.getElementById('ft-cage-stage');
+  var cageEl = document.querySelector('.ft-dp-cage');
+
+  /* 视口 → 设计稿的等比缩放（见文件头「双保险」）*/
+  function fitStage() {
+    var k = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H);
+    if (!isFinite(k) || k <= 0) k = 1;
+    stage.style.transform = (k === 1) ? 'none' : 'scale(' + k + ')';
+  }
+  fitStage();
+  window.addEventListener('resize', fitStage);
+
+  /* 原生推皮肤色：五变量 + 深浅（与 deskpet 的 ftSetSkin 同一套来源） */
+  window.ftCageSkin = function (a, s, sf, sr, b, isLight) {
+    var r = document.documentElement.style;
+    r.setProperty('--ft-accent', a);
+    r.setProperty('--ft-accent-strong', s);
+    r.setProperty('--ft-accent-soft', sf);
+    r.setProperty('--ft-accent-softer', sr);
+    r.setProperty('--ft-accent-bg', b);
+    if (isLight) document.documentElement.setAttribute('data-light', '1');
+    else document.documentElement.removeAttribute('data-light');
+    return 'ok';
+  };
+  /* 门：开门=玻璃消散 / 关门=现形（鱼进笼、出笼时由原生转发） */
+  window.ftCageDoor = function (open) {
+    cageEl.setAttribute('data-open', open ? '1' : '0');
+    return 'ok';
+  };
+  /* 占用（2.23.7 起语义变轻）：罩形不再随它变化，只让浅坑退位（鱼占了那个位子） */
+  window.ftCageOccupied = function (on) {
+    cageEl.setAttribute('data-occupied', on ? '1' : '0');
+    return 'ok';
+  };
+  /* 撞笼/点玻璃：整体抖一下 */
+  window.ftCageShake = function () {
+    cageEl.classList.remove('shake');
+    void cageEl.offsetWidth;          /* 重启动画 */
+    cageEl.classList.add('shake');
+    setTimeout(function () { cageEl.classList.remove('shake'); }, 460);
+    return 'ok';
+  };
+})();
+</script>
+</body>
+</html>

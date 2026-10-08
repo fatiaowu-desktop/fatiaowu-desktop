@@ -22,7 +22,14 @@ swiftc -O -o "$APP/Contents/MacOS/$APP_NAME" "$SRC"
 cp "$RES/skin.css" "$APP/Contents/Resources/"
 cp "$RES/skin-emerald-light.css" "$APP/Contents/Resources/"
 cp "$RES/skin-scarlet.css" "$APP/Contents/Resources/"
-cp "$RES/alive.js" "$APP/Contents/Resources/"
+cp "$RES/skin-cyber.css" "$APP/Contents/Resources/"
+# （alive.js 已于 2.15.2 移除：窗口内生灵层退役，交互全在 deskpet.html）
+# 「放生」层：桌面小鲸鱼页面（独立全屏透明浮层，由 DeskPetController 加载）
+cp "$RES/deskpet.html" "$APP/Contents/Resources/"
+# 灵动岛（躲猫猫）：顶部黑色胶囊 + 两只眼（IslandController 加载）
+cp "$RES/island.html" "$APP/Contents/Resources/"
+# 玻璃穹顶（回笼，2.18.0）：主窗口子视图加载的穹顶页面（CageOverlayController）
+cp "$RES/cage.html" "$APP/Contents/Resources/"
 # 语音层：波形与交互 UI（原生 SFSpeechRecognizer / AVSpeechSynthesizer 由 main.swift 桥接）
 for f in voice.js; do
   [ -f "$RES/$f" ] && cp "$RES/$f" "$APP/Contents/Resources/"
@@ -59,9 +66,9 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.3.0</string>
+	<string>2.28.5</string>
 	<key>CFBundleVersion</key>
-	<string>6</string>
+	<string>93</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSMicrophoneUsageDescription</key>

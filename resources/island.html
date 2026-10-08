@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  /* 黑色胶囊：默认 216px 与系统岛同宽量级；藏身态（body.wide）向两侧对称展开到全宽。
+     高度跟随面板（= 菜单栏高度），绝不再加高（2.17.5）。 */
+  #pill {
+    position: absolute; top: -3px; bottom: 0; left: 50%; width: 216px;
+    transform: translateX(-50%);
+    border-radius: 19px 19px 16px 16px; background: #050507;
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    transition: width .5s cubic-bezier(.4, 0, .2, 1);
+  }
+  body.wide #pill { width: 100%; }
+  /* 藏身态中央一点极淡的背脊弧影：暗示里面有东西，不抢眼 */
+  #hump {
+    position: absolute; left: 50%; bottom: 0; width: 120px; height: 100%;
+    transform: translateX(-50%); border-radius: 999px 999px 0 0; opacity: 0;
+    background: radial-gradient(58% 130% at 50% 100%, rgba(210,235,255,.07), transparent 62%);
+    transition: opacity .5s ease .18s;
+  }
+  body.wide #hump { opacity: 1; }
+  /* 眼睛：基础态藏在中央（不可见）；藏身态贴到两侧。槽位负责定位，眼球负责眨 */
+  .slot { position: absolute; top: 50%; opacity: 0; transition: left .5s cubic-bezier(.4,0,.2,1), right .5s cubic-bezier(.4,0,.2,1), opacity .3s ease; }
+  #s1 { left: calc(50% - 44px); }
+  #s2 { left: calc(50% + 17px); }
+  body.wide #s1 { left: 30px; opacity: 1; }
+  body.wide #s2 { left: auto; right: 30px; opacity: 1; }
+  .eye {
+    position: relative; width: 24px; height: 13px; border-radius: 50%;
+    transform: translateY(-50%);
+    background: radial-gradient(circle at 50% 42%, #e8f6ff 0 56%, #a6d4f0 100%);
+    transition: transform .12s ease;
+  }
+  .eye .pu {
+    position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 50%;
+    background: #0b1020; transform: translate(-50%, -50%); transition: margin .5s ease;
+  }
+  .bub { position: absolute; border-radius: 50%; border: 1px solid rgba(160,200,255,.5); opacity: 0; }
+  @keyframes rise {
+    0%   { opacity: 0;   transform: translateY(8px)  scale(.5); }
+    30%  { opacity: .7; }
+    100% { opacity: 0;   transform: translateY(-18px) scale(1.15); }
+  }
+</style>
+</head>
+<body>
+<div id="pill"><div id="hump"></div></div>
+<div class="slot" id="s1"><div class="eye" id="e1"><div class="pu"></div></div></div>
+<div class="slot" id="s2"><div class="eye" id="e2"><div class="pu"></div></div></div>
+<script>
+(function () {
+  var pill = document.getElementById('pill');
+  var e1 = document.getElementById('e1'), e2 = document.getElementById('e2');
+  var pupils = [e1.querySelector('.pu'), e2.querySelector('.pu')];
+  /* 眨眼：频率随机，偶尔来一次长的（像在打量你） */
+  /* ── 可见性门控（2.23.0）───────────────────────────────────────────────
+     岛面板隐藏时（绝大部分时间）这些自调度定时器不该空转 —— 原生 show/hide 会调
+     ftIslandIdle(on) 开关。岛里只有两只眼睛，停表后完全不影响观感。 */
+  var awake = false;
+  function blink() {
+    if (!awake) return;
+    var d = Math.random() < 0.15 ? 300 : 140;
+    e1.style.transform = 'translateY(-50%) scaleY(.08)'; e2.style.transform = 'translateY(-50%) scaleY(.08)';
+    setTimeout(function () {
+      e1.style.transform = 'translateY(-50%) scaleY(1)'; e2.style.transform = 'translateY(-50%) scaleY(1)';
+      setTimeout(blink, 1200 + Math.random() * 3600);
+    }, d);
+  }
+  /* 起始不自启：等原生 ftIslandIdle(false) 把 awake 打开（岛现形那一刻）。 */
+  /* 眼珠乱瞟：它在岛里看着外面 */
+  function glance() {
+    if (!awake) return;
+    var dx = (Math.random() * 12 - 6).toFixed(1), dy = (Math.random() * 5 - 2.5).toFixed(1);
+    pupils.forEach(function (p) { p.style.marginLeft = dx + 'px'; p.style.marginTop = dy + 'px'; });
+    setTimeout(glance, 1400 + Math.random() * 2800);
+  }
+  /* 同上：见 ftIslandIdle。 */
+  /* 偶尔冒个小泡：岛里也是水里（在胶囊范围内随机） */
+  setInterval(function () {
+    if (!awake) return;                                      // 岛没现形：连定时器都别跑
+    if (!document.body.classList.contains('wide')) return;   // 基础态不冒泡（看不见）
+    var b = document.createElement('div'); b.className = 'bub';
+    var s = 4 + Math.random() * 5;
+    b.style.width = s + 'px'; b.style.height = s + 'px';
+    b.style.left = (8 + Math.random() * 84) + '%';
+    b.style.bottom = '8px';
+    b.style.animation = 'rise ' + (1.6 + Math.random()) + 's ease-out forwards';
+    pill.appendChild(b);
+    setTimeout(function () { b.remove(); }, 2800);
+  }, 5200);
+  /* 原生现形时调用：胶囊向两侧展开、眼睛就位 */
+  window.ftIslandWide = function () {
+    document.body.classList.add('wide');
+    return 'ok';
+  };
+  /* 原生在 show/hide 时调用：on=true 表示「收起、别再动」（省电），false 表示「现形、活着」。
+     重复调用是幂等的（'same'），不会重复挂定时器。 */
+  window.ftIslandIdle = function (on) {
+    on = !!on;
+    if (on === !awake) return 'same';
+    awake = !on;
+    if (awake) { setTimeout(blink, 900); setTimeout(glance, 700); }
+    return awake ? 'awake' : 'idle';
+  };
+  try { window.webkit.messageHandlers.fatiaowuIsland.postMessage({ kind: 'ready', data: {} }); } catch (e) {}
+})();
+</script>
+</body>
+</html>
