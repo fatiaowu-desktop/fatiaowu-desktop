@@ -9,6 +9,16 @@ DEST="$HOME/Applications/$APP_NAME.app"
 SRC="$(pwd)/src/main.swift"
 RES="$(pwd)/resources"
 
+# 守卫：装机那一步会 rm -rf "$DEST"。如果 app 正在运行，这会拆掉它脚下的包，
+# 而且残留的 *.cstemp 会让随后的 codesign --deep 级联失败。先确认没在跑。
+RUNNING="$(pgrep -f "$APP_NAME.app/Contents/MacOS" 2>/dev/null || true)"
+if [ -n "$RUNNING" ]; then
+  echo "❌ $APP_NAME 正在运行（pid: $(printf '%s' "$RUNNING" | tr '\n' ' ')）"
+  echo "   本脚本会 rm -rf 装机目标，可能破坏正在运行的实例；签名也会失败。"
+  echo "   请先退出 ${APP_NAME}（或 osascript -e 'quit app \"${APP_NAME}\"'）再重试。"
+  exit 1
+fi
+
 echo "==> 编译 $APP_NAME"
 # 只清产物本身（约十来个文件），不要整棵删 build/ ——
 # 整棵删会一次抹掉近两百个中间文件，既没必要，也会被批量删除保护拦住。
@@ -89,7 +99,14 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 PLIST
 
 # 4. 签名（adhoc 即可，无开发者证书）
-codesign --force --deep -s - "$APP" >/dev/null 2>&1
+# 失败要显式报出来：静默失败会留下一份没签成的包，或者残留 *.cstemp 让下次更糟。
+if ! CODESIGN_OUT="$(codesign --force --deep -s - "$APP" 2>&1)"; then
+  echo "❌ adhoc 签名失败："
+  printf '%s\n' "$CODESIGN_OUT" | sed 's/^/   /'
+  echo "   常见原因：有进程正持有该包内的可执行文件（先退出 ${APP_NAME}），"
+  echo "   或包内残留 *.cstemp（rm -f \"$APP/Contents/MacOS/\"*.cstemp 后重试）。"
+  exit 1
+fi
 
 # 5. 安装
 rm -rf "$DEST"

@@ -134,7 +134,7 @@ fatiaowu-desktop/
 
 ### Frozen compatibility baseline
 
-Skins are glued onto DSH's internal parts (class names / CSS variables), so *which pair of versions works together* matters more than *each being latest*. This repo treats the combination below as the **verified baseline**, tagged `v2.28.6`:
+Skins are glued onto DSH's internal parts (class names / CSS variables), so *which pair of versions works together* matters more than *each being latest*. This repo treats the combination below as the **verified baseline**, tagged `v2.28.6.1`:
 
 | | Version |
 |---|---|
@@ -144,12 +144,19 @@ Skins are glued onto DSH's internal parts (class names / CSS variables), so *whi
 Going back:
 
 ```bash
-git checkout v2.28.6
+git checkout v2.28.6.1
 ./scripts/build.sh
 npx -y @deepseek-ai/dsh@0.1.5-rc.2 web     # start the service with the pinned version
 ```
 
-`service/dsh-server.sh` only looks for `dsh` in `PATH` and the npx cache — it does **not** pin a version itself, so avoid running the unversioned `npx -y @deepseek-ai/dsh web`.
+`service/dsh-server.sh` **pins `DSH_VERSION=0.1.5-rc.2` by default** (overridable via env var). It first looks for `dsh` in `PATH`, then in `~/.npm/_npx/*/node_modules/` and the global `node_modules/` dirs; it only falls back to "any version" when no match is found.
+
+Two easy traps:
+
+- dsh's entry file is **`<pkg>/lib/bin.js`** (the package's `package.json` declares `"bin": {"dsh": "lib/bin.js"}`), *not* `<pkg>/bin.js` — looking for the latter finds nothing;
+- the service starts with **`--no-open`**, otherwise launchd pops a browser window every time it launches.
+
+`./scripts/install-service.sh` installs the wrapper and the plist template (`__HOME__` replaced with the real home dir) — it **reproduces the live configuration verbatim**.
 
 ### Skins break after a DSH upgrade?
 

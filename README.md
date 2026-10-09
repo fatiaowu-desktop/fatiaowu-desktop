@@ -156,7 +156,7 @@ fatiaowu-desktop/
 
 ### 已冻结的兼容基线
 
-皮肤贴在 DSH 的界面零件（类名 / CSS 变量）上，所以「哪两个版本配在一起是对的」比「各自最新」重要。本仓库把下面这套当成**已验证基线**，标签 `v2.28.6`：
+皮肤贴在 DSH 的界面零件（类名 / CSS 变量）上，所以「哪两个版本配在一起是对的」比「各自最新」重要。本仓库把下面这套当成**已验证基线**，标签 `v2.28.6.1`：
 
 | | 版本 |
 |---|---|
@@ -166,12 +166,19 @@ fatiaowu-desktop/
 退回这套组合：
 
 ```bash
-git checkout v2.28.6
+git checkout v2.28.6.1
 ./scripts/build.sh
 npx -y @deepseek-ai/dsh@0.1.5-rc.2 web     # 用锁定的 DSH 版本起服务
 ```
 
-`service/dsh-server.sh` 只在 `PATH` 与 npx 缓存里找 `dsh`，**自己不锁版本**——所以别跑不带版本号的 `npx -y @deepseek-ai/dsh web`。
+`service/dsh-server.sh` **默认已钉住 `DSH_VERSION=0.1.5-rc.2`**（可用环境变量覆盖）。它先在 `PATH` 里找 `dsh`，再在 `~/.npm/_npx/*/node_modules/` 与各全局 `node_modules/` 里找入口；只有版本对不上时才退回「任意版本」。
+
+两个容易踩的点：
+
+- dsh 的入口是 **`<pkg>/lib/bin.js`**（该包 `package.json` 里写的是 `"bin": {"dsh": "lib/bin.js"}`），不是 `<pkg>/bin.js`——照后者去找会一个都找不到；
+- 服务用 **`--no-open`** 启动，否则 launchd 每次拉起它都会弹一个浏览器窗口。
+
+`./scripts/install-service.sh` 会把包装脚本与 plist 模板（`__HOME__` 替换成真实家目录）装到位，**能原样复现实机配置**。
 
 ### DSH 升级后皮肤失效怎么办？
 

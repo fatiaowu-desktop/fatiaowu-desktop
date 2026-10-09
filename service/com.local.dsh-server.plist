@@ -9,6 +9,8 @@
 		<string>/bin/bash</string>
 		<string>__HOME__/.dsh/bin/dsh-server.sh</string>
 	</array>
+	<key>WorkingDirectory</key>
+	<string>__HOME__</string>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
@@ -21,8 +23,10 @@
 	<dict>
 		<key>HOME</key>
 		<string>__HOME__</string>
+		<key>DSH_HOME</key>
+		<string>__HOME__/.dsh</string>
 		<key>PATH</key>
-		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+		<string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 	</dict>
 	<key>StandardOutPath</key>
 	<string>__HOME__/.dsh/logs/dsh-server.out.log</string>
